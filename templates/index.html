@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>St. Xavier's International School - Attendance Portal</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+    body { background: #f4f7fe; color: #2b3674; padding: 30px 15px; }
+
+    /* --- INTRO ANIMATION STYLES --- */
+    .intro-overlay {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(135deg, #1b2559 0%, #4318ff 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      color: #ffffff;
+      animation: fadeOutOverlay 0.8s ease-in-out 2.5s forwards;
+      pointer-events: none;
+    }
+    @keyframes fadeOutOverlay {
+      0% { opacity: 1; visibility: visible; }
+      100% { opacity: 0; visibility: hidden; }
+    }
+    .intro-box {
+      text-align: center;
+      animation: zoomInIntro 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    @keyframes zoomInIntro {
+      0% { opacity: 0; transform: scale(0.7) translateY(20px); }
+      100% { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .intro-logo {
+      width: 90px;
+      height: 90px;
+      background: #ffffff;
+      color: #4318ff;
+      border-radius: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.8rem;
+      font-weight: 800;
+      margin: 0 auto 20px auto;
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25);
+    }
+    .intro-tagline {
+      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      color: #707eae;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .intro-title {
+      font-size: 2.2rem;
+      font-weight: 800;
+      margin-bottom: 10px;
+      color: #ffffff;
+    }
+    .intro-sub {
+      font-size: 1.1rem;
+      color: #a3aed0;
+      font-weight: 500;
+    }
+
+    /* --- MAIN APP STYLES --- */
+    .container { max-width: 980px; margin: 0 auto; background: #ffffff; padding: 35px; border-radius: 20px; box-shadow: 0 15px 35px rgba(112, 144, 176, 0.12); }
+    
+    .school-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #f4f7fe; padding-bottom: 20px; margin-bottom: 25px; }
+    .brand { display: flex; align-items: center; gap: 15px; }
+    .logo-icon { width: 48px; height: 48px; background: #4318ff; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1.5rem; font-weight: 700; }
+    .school-title h1 { font-size: 1.4rem; font-weight: 700; color: #1b2559; }
+    .school-title p { font-size: 0.85rem; color: #707eae; font-weight: 500; }
+    
+    .status-badge { padding: 8px 16px; border-radius: 30px; font-weight: 600; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px; }
+    .locked { background: #ffebe9; color: #ee5d50; }
+    .unlocked { background: #e6faf5; color: #05cd99; }
+    
+    .controls-card { background: #f8f9ff; padding: 20px; border-radius: 14px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; align-items: end; margin-bottom: 25px; }
+    .control-group { display: flex; flex-direction: column; gap: 6px; }
+    .control-group label { font-size: 0.8rem; font-weight: 700; color: #707eae; text-transform: uppercase; }
+    .control-group select, .control-group input { padding: 10px 14px; border-radius: 10px; border: 1px solid #e0e5f2; font-weight: 600; color: #2b3674; outline: none; background: #fff; height: 42px; }
+    
+    .banner { padding: 14px 18px; border-radius: 10px; font-weight: 600; margin-bottom: 20px; display: none; text-align: center; }
+    .banner-holiday { background: #e7f0ff; color: #1a56db; border: 1px solid #b8d2fe; }
+    .banner-submitted { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+    .banner-future { background: #ffebe9; color: #ee5d50; border: 1px solid #fdc5c1; }
+
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { padding: 14px; text-align: left; border-bottom: 1px solid #e0e5f2; vertical-align: middle; }
+    th { background: #ffffff; color: #707eae; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; }
+    
+    th:nth-child(1), td:nth-child(1) { width: 15%; text-align: center; }
+    th:nth-child(2), td:nth-child(2) { width: 45%; }
+    th:nth-child(3), td:nth-child(3) { width: 40%; text-align: center; }
+
+    .radio-group { display: inline-flex; gap: 20px; align-items: center; justify-content: center; }
+    .radio-label { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.9rem; cursor: pointer; }
+    .radio-label input[type="radio"] { accent-color: #05cd99; width: 18px; height: 18px; cursor: pointer; }
+    .radio-label.absent-label input[type="radio"] { accent-color: #ee5d50; }
+    .radio-label.present-label { color: #05cd99; }
+    .radio-label.absent-label { color: #ee5d50; }
+    .radio-group input[type="radio"]:disabled { cursor: not-allowed; opacity: 0.5; }
+    
+    .btn { padding: 12px 20px; border: none; border-radius: 12px; cursor: pointer; font-weight: 600; transition: 0.2s; font-size: 0.9rem; height: 42px; display: inline-flex; align-items: center; justify-content: center; }
+    .btn-primary { background: #4318ff; color: #fff; }
+    .btn-primary:hover { background: #3311db; }
+    .btn-avg { background: #01b574; color: #fff; width: 100%; }
+    .btn-avg:hover { background: #019a63; }
+    .btn-save { background: #05cd99; color: #fff; font-size: 1rem; width: 100%; margin-top: 25px; padding: 16px; height: auto; }
+    .btn-save:hover { background: #04b385; }
+    .btn-save:disabled { background: #e0e5f2; color: #a3aed0; cursor: not-allowed; }
+    
+    .modal { display: none; position: fixed; inset: 0; background: rgba(11, 14, 38, 0.5); justify-content: center; align-items: center; z-index: 100; backdrop-filter: blur(4px); }
+    .modal.open { display: flex; }
+    .modal-box { background: #fff; padding: 30px; border-radius: 20px; width: 450px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.15); max-height: 85vh; display: flex; flex-direction: column; }
+    .tab-group { display: flex; background: #f4f7fe; border-radius: 10px; padding: 4px; margin-bottom: 20px; }
+    .tab-btn { flex: 1; padding: 8px; border: none; background: transparent; font-weight: 600; border-radius: 8px; cursor: pointer; color: #707eae; }
+    .tab-btn.active { background: #fff; color: #4318ff; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+    
+    .student-avg-list { overflow-y: auto; text-align: left; margin: 15px 0; border: 1px solid #e0e5f2; border-radius: 12px; padding: 10px; max-height: 350px; }
+    .avg-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid #f4f7fe; }
+    .avg-row:last-child { border-bottom: none; }
+    .avg-badge { font-weight: 700; padding: 4px 10px; border-radius: 20px; font-size: 0.85rem; }
+    .avg-high { background: #e6faf5; color: #05cd99; }
+    .avg-low { background: #ffebe9; color: #ee5d50; }
+
+    video { width: 100%; height: 200px; object-fit: cover; border-radius: 12px; background: #000; transform: scaleX(-1); margin: 15px 0; }
+    .pin-input { width: 100%; padding: 14px; font-size: 1.2rem; text-align: center; letter-spacing: 8px; border-radius: 10px; border: 1px solid #e0e5f2; margin: 20px 0; font-weight: 700; }
+  </style>
+</head>
+<body>
+
+<!-- INTRO WELCOME ANIMATION OVERLAY -->
+<div class="intro-overlay">
+  <div class="intro-box">
+    <div class="intro-logo">SX</div>
+    <div class="intro-tagline">Welcome To</div>
+    <div class="intro-title">St. Xavier's International School</div>
+    <div class="intro-sub">Smart Attendance Portal</div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="school-header">
+    <div class="brand">
+      <div class="logo-icon">SX</div>
+      <div class="school-title">
+        <h1>St. Xavier's International School</h1>
+        <p>Smart Student Attendance Portal</p>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span id="lockStatus" class="status-badge locked">🔒 Authentication Required</span>
+      <button id="authBtn" class="btn btn-primary" onclick="openAuthModal()">Teacher Login</button>
+      <button id="editBtn" class="btn" style="background: #ffb545; color: #fff; display: none;" onclick="enableEditMode()">✏️ Edit Attendance</button>
+    </div>
+  </div>
+
+  <div class="controls-card">
+    <div class="control-group">
+      <label>Class</label>
+      <select id="classSelect" onchange="loadStudents()">
+        <option value="1">Class 1</option>
+        <option value="2">Class 2</option>
+        <option value="3">Class 3</option>
+        <option value="4">Class 4</option>
+        <option value="5">Class 5</option>
+        <option value="6">Class 6</option>
+        <option value="7">Class 7</option>
+        <option value="8">Class 8</option>
+        <option value="9">Class 9</option>
+        <option value="10" selected>Class 10</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>Division</label>
+      <select id="divisionSelect" onchange="loadStudents()">
+        <option value="A" selected>Division A</option>
+        <option value="B">Division B</option>
+        <option value="C">Division C</option>
+        <option value="D">Division D</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>Date</label>
+      <input type="date" id="attendanceDate" onchange="loadStudents()">
+    </div>
+    <div class="control-group">
+      <button class="btn btn-avg" onclick="openAvgModal()">📊 Generate Avg</button>
+    </div>
+  </div>
+
+  <div id="futureBanner" class="banner banner-future">
+    📅 <strong>Future Date Selected:</strong> Attendance cannot be marked for future dates.
+  </div>
+
+  <div id="holidayBanner" class="banner banner-holiday">
+    🌴 <strong>Holiday:</strong> <span id="holidayReasonText"></span>
+  </div>
+
+  <div id="submittedBanner" class="banner banner-submitted">
+    ⚠️ Attendance for this Class, Division, and Date has already been submitted and recorded.
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Roll No</th>
+        <th>Student Name</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="studentTable"></tbody>
+  </table>
+
+  <button id="saveBtn" class="btn btn-save" onclick="saveAttendance()">Save Attendance</button>
+</div>
+
+<!-- Teacher Auth Modal -->
+<div class="modal" id="authModal">
+  <div class="modal-box">
+    <h2 style="font-size: 1.2rem; color: #1b2559; margin-bottom: 15px;">Teacher Verification</h2>
+    
+    <div class="tab-group">
+      <button id="tabFace" class="tab-btn active" onclick="switchAuthTab('face')">Face ID</button>
+      <button id="tabPin" class="tab-btn" onclick="switchAuthTab('pin')">PIN Password</button>
+    </div>
+
+    <!-- Face ID Tab -->
+    <div id="faceTabContent">
+      <video id="webcam" autoplay playsinline></video>
+      <p id="scanMsg" style="font-size: 0.85rem; font-weight: 600; margin-bottom: 15px; color: #707eae;">Starting Camera...</p>
+      <button class="btn btn-primary" style="width: 100%; margin-bottom: 8px;" onclick="verifyFace()">Verify Face</button>
+    </div>
+
+    <!-- PIN Tab -->
+    <div id="pinTabContent" style="display: none;">
+      <p style="font-size: 0.85rem; color: #707eae; font-weight: 600;">Enter your 4-digit Teacher Security PIN</p>
+      <input type="password" id="pinInput" class="pin-input" maxlength="4" placeholder="••••">
+      <p id="pinMsg" style="font-size: 0.85rem; font-weight: 600; margin-bottom: 15px; color: #ee5d50;"></p>
+      <button class="btn btn-primary" style="width: 100%; margin-bottom: 8px;" onclick="verifyPin()">Submit PIN</button>
+    </div>
+
+    <button class="btn" style="width: 100%; background: #f4f7fe; color: #2b3674; margin-top: 5px;" onclick="closeModal('authModal')">Cancel</button>
+  </div>
+</div>
+
+<!-- Analytics Modal -->
+<div class="modal" id="avgModal">
+  <div class="modal-box">
+    <h2 style="font-size: 1.2rem; color: #1b2559; margin-bottom: 15px;">Student Attendance Analytics</h2>
+    
+    <div class="tab-group">
+      <button id="tabWeekAvg" class="tab-btn active" onclick="switchAvgType('week')">Weekly Avg</button>
+      <button id="tabMonthAvg" class="tab-btn" onclick="switchAvgType('month')">Monthly Avg</button>
+    </div>
+
+    <div id="avgStudentList" class="student-avg-list">
+      <p style="text-align:center; color:#707eae;">Calculating individual averages...</p>
+    </div>
+
+    <button class="btn btn-primary" style="width: 100%;" onclick="closeModal('avgModal')">Close</button>
+  </div>
+</div>
+
+<script>
+  let isTeacherVerified = false;
+  let isAlreadySubmitted = false;
+  let isHoliday = false;
+  let isFutureDate = false;
+  let isEditMode = false;
+  let videoStream = null;
+  let currentAttendance = {};
+  let currentAvgType = 'week';
+
+  // LOCAL TIMEZONE DATE FORMATTER
+  const localDate = new Date();
+  const year = localDate.getFullYear();
+  const month = String(localDate.getMonth() + 1).padStart(2, '0');
+  const day = String(localDate.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
+
+  const datePicker = document.getElementById('attendanceDate');
+  datePicker.value = todayStr;
+  datePicker.max = todayStr;
+
+  async function loadStudents() {
+    const classNum = document.getElementById('classSelect').value;
+    const division = document.getElementById('divisionSelect').value;
+    const selectedDate = document.getElementById('attendanceDate').value;
+    
+    if (!selectedDate) return;
+
+    try {
+      const res = await fetch(`/api/students?class_num=${classNum}&division=${division}&date=${selectedDate}`);
+      const data = await res.json();
+      
+      if (!res.ok || !data.success) {
+        console.error("Server Error:", data);
+        return;
+      }
+
+      isAlreadySubmitted = data.is_submitted;
+      isHoliday = data.is_holiday;
+      isFutureDate = data.is_future;
+      isEditMode = false;
+
+      // Update Banners
+      document.getElementById('futureBanner').style.display = isFutureDate ? 'block' : 'none';
+      document.getElementById('holidayBanner').style.display = (isHoliday && !isFutureDate) ? 'block' : 'none';
+      if (isHoliday) document.getElementById('holidayReasonText').innerText = data.holiday_reason || '';
+
+      document.getElementById('submittedBanner').style.display = (isAlreadySubmitted && !isHoliday && !isFutureDate) ? 'block' : 'none';
+      document.getElementById('editBtn').style.display = (isAlreadySubmitted && isTeacherVerified && !isHoliday && !isFutureDate) ? 'inline-block' : 'none';
+      
+      const saveBtn = document.getElementById('saveBtn');
+      saveBtn.innerText = "Save Attendance";
+      saveBtn.disabled = isAlreadySubmitted || isHoliday || isFutureDate;
+
+      const tbody = document.getElementById("studentTable");
+      currentAttendance = {};
+      
+      if (!data.students || data.students.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;">No students found for this class.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = data.students.map(s => {
+        currentAttendance[s.roll] = s.status;
+        const isDisabled = (!isTeacherVerified || isHoliday || isFutureDate || (isAlreadySubmitted && !isEditMode));
+        return `
+          <tr>
+            <td><strong>${s.roll}</strong></td>
+            <td>${s.name}</td>
+            <td>
+              <div class="radio-group">
+                <label class="radio-label present-label">
+                  <input 
+                    type="radio" 
+                    name="status_${s.roll}" 
+                    value="Present" 
+                    ${s.status === 'Present' ? 'checked' : ''} 
+                    ${isDisabled ? 'disabled' : ''} 
+                    onclick="setStatus('${s.roll}', 'Present')">
+                  Present
+                </label>
+                <label class="radio-label absent-label">
+                  <input 
+                    type="radio" 
+                    name="status_${s.roll}" 
+                    value="Absent" 
+                    ${s.status === 'Absent' ? 'checked' : ''} 
+                    ${isDisabled ? 'disabled' : ''} 
+                    onclick="setStatus('${s.roll}', 'Absent')">
+                  Absent
+                </label>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    } catch (err) {
+      console.error("Failed to load students:", err);
+    }
+  }
+
+  function setStatus(roll, status) {
+    if (!isTeacherVerified || isHoliday || isFutureDate || (isAlreadySubmitted && !isEditMode)) return;
+    currentAttendance[roll] = status;
+  }
+
+  function enableEditMode() {
+    if (!isTeacherVerified) return alert("Please authenticate first!");
+    if (isFutureDate) return alert("Cannot edit future dates!");
+    isEditMode = true;
+    document.getElementById('saveBtn').disabled = false;
+    document.getElementById('saveBtn').innerText = "Update Attendance";
+    document.querySelectorAll('input[type="radio"]').forEach(radio => radio.disabled = false);
+  }
+
+  function openAvgModal() {
+    document.getElementById('avgModal').classList.add('open');
+    fetchPersonalAverageStats();
+  }
+
+  function switchAvgType(type) {
+    currentAvgType = type;
+    document.getElementById('tabWeekAvg').className = type === 'week' ? 'tab-btn active' : 'tab-btn';
+    document.getElementById('tabMonthAvg').className = type === 'month' ? 'tab-btn active' : 'tab-btn';
+    fetchPersonalAverageStats();
+  }
+
+  async function fetchPersonalAverageStats() {
+    const classNum = document.getElementById('classSelect').value;
+    const division = document.getElementById('divisionSelect').value;
+    const selectedDate = document.getElementById('attendanceDate').value;
+    const listContainer = document.getElementById('avgStudentList');
+
+    listContainer.innerHTML = `<p style="text-align:center; color:#707eae;">Calculating individual averages...</p>`;
+
+    try {
+      const res = await fetch(`/api/generate-avg?class_num=${classNum}&division=${division}&date=${selectedDate}&type=${currentAvgType}`);
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        listContainer.innerHTML = `<p style="text-align:center; color:#ee5d50;">Failed to calculate averages.</p>`;
+        return;
+      }
+
+      if (data.students.length === 0) {
+        listContainer.innerHTML = `<p style="text-align:center; color:#ee5d50;">No attendance records found for this time period.</p>`;
+        return;
+      }
+
+      listContainer.innerHTML = data.students.map(s => {
+        const badgeClass = s.percentage >= 75 ? 'avg-high' : 'avg-low';
+        return `
+          <div class="avg-row">
+            <div>
+              <strong>Roll ${s.roll}: ${s.name}</strong>
+              <div style="font-size:0.75rem; color:#707eae;">${s.present}/${s.total} Days Present</div>
+            </div>
+            <div class="avg-badge ${badgeClass}">${s.percentage}%</div>
+          </div>
+        `;
+      }).join('');
+
+    } catch (err) {
+      listContainer.innerHTML = `<p style="text-align:center; color:#ee5d50;">Failed to load data.</p>`;
+    }
+  }
+
+  async function saveAttendance() {
+    if (!isTeacherVerified) return alert("Teacher verification required!");
+    if (isFutureDate) return alert("Attendance cannot be recorded for a future date!");
+    if (isHoliday) return alert("Attendance cannot be recorded on a Holiday.");
+
+    const classNum = document.getElementById('classSelect').value;
+    const division = document.getElementById('divisionSelect').value;
+    const selectedDate = document.getElementById('attendanceDate').value;
+    const endpoint = isEditMode ? '/api/update-attendance' : '/api/save-attendance';
+
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          class_num: classNum,
+          division: division,
+          date: selectedDate,
+          records: currentAttendance
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert(`✓ Attendance saved/updated successfully!`);
+        loadStudents();
+      } else {
+        alert(`⚠️ ${data.message}`);
+      }
+    } catch (err) {
+      alert("⚠️ Connection error.");
+    }
+  }
+
+  function switchAuthTab(tab) {
+    if (tab === 'face') {
+      document.getElementById('tabFace').className = 'tab-btn active';
+      document.getElementById('tabPin').className = 'tab-btn';
+      document.getElementById('faceTabContent').style.display = 'block';
+      document.getElementById('pinTabContent').style.display = 'none';
+      startCamera();
+    } else {
+      document.getElementById('tabPin').className = 'tab-btn active';
+      document.getElementById('tabFace').className = 'tab-btn';
+      document.getElementById('pinTabContent').style.display = 'block';
+      document.getElementById('faceTabContent').style.display = 'none';
+      if (videoStream) videoStream.getTracks().forEach(t => t.stop());
+    }
+  }
+
+  function openAuthModal() {
+    document.getElementById("authModal").classList.add("open");
+    switchAuthTab('face');
+  }
+
+  async function startCamera() {
+    try {
+      videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      document.getElementById("webcam").srcObject = videoStream;
+      document.getElementById("scanMsg").innerText = "Camera Ready";
+    } catch (err) {
+      document.getElementById("scanMsg").innerText = "Camera Access Denied";
+    }
+  }
+
+  function closeModal(id) {
+    if (id === 'authModal' && videoStream) videoStream.getTracks().forEach(t => t.stop());
+    document.getElementById(id).classList.remove("open");
+  }
+
+  async function verifyFace() {
+    const video = document.getElementById("webcam");
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+
+    document.getElementById("scanMsg").innerText = "Verifying...";
+
+    try {
+      const res = await fetch('/api/verify-teacher', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: canvas.toDataURL('image/jpeg') })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) onAuthSuccess();
+      else document.getElementById("scanMsg").innerText = data.message || "Access Denied";
+    } catch (err) {
+      document.getElementById("scanMsg").innerText = "Connection Error!";
+    }
+  }
+
+  async function verifyPin() {
+    const pin = document.getElementById('pinInput').value;
+    try {
+      const res = await fetch('/api/verify-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: pin })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) onAuthSuccess();
+      else document.getElementById('pinMsg').innerText = data.message || "Incorrect PIN";
+    } catch (err) {
+      document.getElementById('pinMsg').innerText = "Connection Error!";
+    }
+  }
+
+  function onAuthSuccess() {
+    isTeacherVerified = true;
+    document.getElementById("lockStatus").innerText = "🔓 Teacher Authenticated";
+    document.getElementById("lockStatus").className = "status-badge unlocked";
+    document.getElementById("authBtn").style.display = "none";
+    closeModal('authModal');
+    loadStudents();
+  }
+
+  loadStudents();
+</script>
+</body>
+</html>
