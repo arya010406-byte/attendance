@@ -256,6 +256,6 @@ def update_attendance():
     return jsonify({"success": True, "message": "Attendance updated successfully!"})
 
 if __name__ == '__main__':
-    from waitress import serve
-    print("🚀 Server running smoothly on http://localhost:5000")
-    serve(app, host='0.0.0.0', port=5000)
+    # Dynamic port binding required for Render deployment
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
