@@ -12,30 +12,34 @@ app = Flask(__name__)
 CORS(app)
 
 # --- CONFIGURATION ---
-TEACHER_ENCODING_FILE = "teacher_face.npy"
 TEACHER_PIN = "5024"
-
-# MongoDB Atlas Connection String
 MONGO_URI = "mongodb+srv://arya010406_db_user:cm1dSXahpmAmNf82@cluster0.6zhgx9u.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
-# Connect to MongoDB Atlas with SSL Certificate Verification
-client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
-db = client["school_db"]
-attendance_collection = db["attendance"]
+# --- LAZY INITIALIZERS ---
+db_client = None
+face_cascade = None
 
-# Built-in OpenCV Face Detector
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+def get_collection():
+    global db_client
+    if db_client is None:
+        db_client = MongoClient(MONGO_URI, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
+    return db_client["school_db"]["attendance"]
+
+def get_face_cascade():
+    global face_cascade
+    if face_cascade is None:
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    return face_cascade
 
 # --- HELPER: HOLIDAY CHECKER ---
 def is_holiday(date_str):
-    """Returns True if date is a Sunday or 2nd/4th Saturday."""
     dt = datetime.strptime(date_str, "%Y-%m-%d")
-    weekday = dt.weekday() # 0=Mon, 5=Sat, 6=Sun
+    weekday = dt.weekday()
     
-    if weekday == 6: # Sunday
+    if weekday == 6:
         return True, "Sunday Holiday"
     
-    if weekday == 5: # Saturday
+    if weekday == 5:
         day_of_month = dt.day
         saturday_index = (day_of_month - 1) // 7 + 1
         if saturday_index in [2, 4]:
@@ -85,6 +89,7 @@ def get_students():
     
     holiday, reason = is_holiday(selected_date)
     
+    attendance_collection = get_collection()
     records = list(attendance_collection.find({
         "class_num": class_num,
         "division": division,
@@ -139,6 +144,7 @@ def generate_avg():
             "date": {"$regex": f"^{month_prefix}"}
         }
     
+    attendance_collection = get_collection()
     records = list(attendance_collection.find(query))
     students_list = generate_unique_students(class_num, division)
     
@@ -178,7 +184,8 @@ def verify_teacher():
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        cascade = get_face_cascade()
+        faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
 
         if len(faces) > 0:
             return jsonify({"success": True, "message": "Teacher Verified"}), 200
@@ -203,6 +210,7 @@ def save_attendance():
     if holiday:
         return jsonify({"success": False, "message": f"Cannot save attendance: {reason}"}), 400
 
+    attendance_collection = get_collection()
     existing = attendance_collection.find_one({
         "class_num": class_num,
         "division": division,
@@ -241,6 +249,7 @@ def update_attendance():
     if selected_date > today_str:
         return jsonify({"success": False, "message": "Cannot update attendance for a future date!"}), 400
 
+    attendance_collection = get_collection()
     students_list = generate_unique_students(class_num, division)
     name_map = {str(s['roll']): s['name'] for s in students_list}
 
