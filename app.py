@@ -6,6 +6,7 @@ import base64
 from datetime import datetime, timedelta
 import cv2
 import os
+import certifi
 
 app = Flask(__name__)
 CORS(app)
@@ -17,12 +18,12 @@ TEACHER_PIN = "5024"
 # MongoDB Atlas Connection String
 MONGO_URI = "mongodb+srv://arya010406_db_user:cm1dSXahpmAmNf82@cluster0.6zhgx9u.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
-# Connect to MongoDB Atlas
-client = MongoClient(MONGO_URI)
+# Connect to MongoDB Atlas with SSL Certificate Verification
+client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
 db = client["school_db"]
 attendance_collection = db["attendance"]
 
-# Load built-in OpenCV Face Detector (Zero C++ compilation needed)
+# Built-in OpenCV Face Detector
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
 # --- HELPER: HOLIDAY CHECKER ---
