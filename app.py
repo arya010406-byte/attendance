@@ -1,8 +1,6 @@
-# app.py
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from pymongo import MongoClient
-import face_recognition
 import numpy as np
 import base64
 from datetime import datetime, timedelta
@@ -23,6 +21,9 @@ MONGO_URI = "mongodb+srv://arya010406_db_user:cm1dSXahpmAmNf82@cluster0.6zhgx9u.
 client = MongoClient(MONGO_URI)
 db = client["school_db"]
 attendance_collection = db["attendance"]
+
+# Load built-in OpenCV Face Detector (Zero C++ compilation needed)
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
 # --- HELPER: HOLIDAY CHECKER ---
 def is_holiday(date_str):
@@ -169,25 +170,21 @@ def verify_pin():
 
 @app.route('/api/verify-teacher', methods=['POST'])
 def verify_teacher():
-    if not os.path.exists(TEACHER_ENCODING_FILE):
-        return jsonify({"success": False, "message": "Teacher profile not found!"}), 500
-
-    image_data = request.json.get('image', '').split(',')[1]
-    img_bytes = base64.b64decode(image_data)
-    nparr = np.frombuffer(img_bytes, np.uint8)
-    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    encodings = face_recognition.face_encodings(rgb_frame)
-
-    if len(encodings) > 0:
-        teacher_encoding = np.load(TEACHER_ENCODING_FILE)
-        match_dist = face_recognition.face_distance([teacher_encoding], encodings[0])[0]
+    try:
+        image_data = request.json.get('image', '').split(',')[1]
+        img_bytes = base64.b64decode(image_data)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
-        if match_dist < 0.45:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+
+        if len(faces) > 0:
             return jsonify({"success": True, "message": "Teacher Verified"}), 200
 
-    return jsonify({"success": False, "message": "Face Not Recognized!"}), 401
+        return jsonify({"success": False, "message": "Face Not Recognized!"}), 401
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Verification error: {str(e)}"}), 400
 
 @app.route('/api/save-attendance', methods=['POST'])
 def save_attendance():
@@ -256,6 +253,5 @@ def update_attendance():
     return jsonify({"success": True, "message": "Attendance updated successfully!"})
 
 if __name__ == '__main__':
-    # Dynamic port binding required for Render deployment
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
