@@ -1,312 +1,293 @@
-from flask import Flask, request, jsonify, render_template
-from flask_cors import CORS
-
-# Optional imports wrapped safely to prevent boot crashes
-try:
-    import cv2
-    import numpy as np
-    CV2_AVAILABLE = True
-except Exception as e:
-    CV2_AVAILABLE = False
-    print(f"Warning: OpenCV failed to load ({e}). Face detection will use fallback.")
-
-try:
-    from pymongo import MongoClient
-    import certifi
-    MONGO_AVAILABLE = True
-except Exception as e:
-    MONGO_AVAILABLE = False
-    print(f"Warning: MongoDB dependencies failed ({e}).")
-
 import base64
-from datetime import datetime, timedelta
 import os
+import sqlite3
+
+import cv2
+import face_recognition
+from flask import Flask, jsonify, render_template, request
+import numpy as np
 
 app = Flask(__name__)
-CORS(app)
 
-# --- CONFIGURATION ---
-TEACHER_PIN = "5024"
-MONGO_URI = "mongodb+srv://arya010406_db_user:cm1dSXahpmAmNf82@cluster0.6zhgx9u.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+# HARDCODED TEACHER PIN (Change this to your preferred 4-digit PIN)
+TEACHER_PIN = "1234"
 
-# --- LAZY INITIALIZERS ---
-db_client = None
-face_cascade = None
+# Path to your face encoding file
+FACE_ENCODING_PATH = "teacher_face.npy"
 
-def get_collection():
-    global db_client
-    if not MONGO_AVAILABLE:
-        return None
-    if db_client is None:
-        db_client = MongoClient(MONGO_URI, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
-    return db_client["school_db"]["attendance"]
 
-def get_face_cascade():
-    global face_cascade
-    if not CV2_AVAILABLE:
-        return None
-    if face_cascade is None:
-        try:
-            face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        except Exception:
-            face_cascade = None
-    return face_cascade
+# Initialize SQLite Database
+def init_db():
+    conn = sqlite3.connect("attendance.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS attendance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            class_num TEXT,
+            division TEXT,
+            date TEXT,
+            roll_no TEXT,
+            status TEXT,
+            UNIQUE(class_num, division, date, roll_no)
+        )
+    """
+    )
+    conn.commit()
+    conn.close()
 
-# --- HELPER: HOLIDAY CHECKER ---
-def is_holiday(date_str):
-    dt = datetime.strptime(date_str, "%Y-%m-%d")
-    weekday = dt.weekday()
-    
-    if weekday == 6:
-        return True, "Sunday Holiday"
-    
-    if weekday == 5:
-        day_of_month = dt.day
-        saturday_index = (day_of_month - 1) // 7 + 1
-        if saturday_index in [2, 4]:
-            return True, f"{saturday_index}nd/th Saturday Holiday"
-            
-    return False, ""
 
-# --- UNIQUE NAME GENERATOR ---
-FIRST_NAMES = [
-    "Aarav", "Ananya", "Rohan", "Priya", "Kabir", "Diya", "Vivaan", "Anushka", "Aditya", "Sanya",
-    "Ishaan", "Riya", "Vihaan", "Tanvi", "Arjun", "Kavya", "Ayaan", "Meera", "Dhruv", "Pooja",
-    "Karan", "Sneha", "Siddharth", "Nisha", "Rahul", "Neha", "Yash", "Tara", "Varun", "Kriti"
-]
+init_db()
 
-LAST_NAMES = [
-    "Sharma", "Patel", "Verma", "Singh", "Mehta", "Joshi", "Kapoor", "Nair", "Rao", "Malhotra",
-    "Gupta", "Sen", "Das", "Bhat", "Reddy", "Shah", "Khan", "Iyer", "Saxena", "Hegde",
-    "Gill", "Roy", "Bose", "Agarwal", "Mishra", "Chawla", "Thakur", "Sutaria", "Dhawan", "Sanon"
-]
 
-def generate_unique_students(class_num, division):
-    students = []
-    div_offset = ord(division.upper()) - ord('A')
-    class_offset = int(class_num)
-    
-    for i in range(1, 31):
-        fn_idx = (i - 1 + class_offset) % len(FIRST_NAMES)
-        ln_idx = (i - 1 + div_offset * 3 + class_offset) % len(LAST_NAMES)
-        name = f"{FIRST_NAMES[fn_idx]} {LAST_NAMES[ln_idx]}"
-        students.append({"id": i, "roll": str(i), "name": name})
-    return students
+# Sample Student Data Generator
+def get_sample_students(class_num, division):
+    return [
+        {"roll": "1", "name": "Ishaan Gupta"},
+        {"roll": "2", "name": "Riya Sen"},
+        {"roll": "3", "name": "Vihaan Das"},
+        {"roll": "4", "name": "Tanvi Bhat"},
+        {"roll": "5", "name": "Arjun Reddy"},
+        {"roll": "6", "name": "Kavya Shah"},
+    ]
 
-# --- API ROUTES ---
 
-@app.route('/')
-def home():
-    return render_template('index.html')
+@app.route("/")
+def index():
+    return render_template("index.html")
 
-@app.route('/api/students', methods=['GET'])
-def get_students():
-    class_num = request.args.get('class_num', '10')
-    division = request.args.get('division', 'A')
-    selected_date = request.args.get('date')
-    
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    is_future = selected_date > today_str
-    
-    holiday, reason = is_holiday(selected_date)
-    
-    records = []
-    attendance_collection = get_collection()
-    if attendance_collection is not None:
-        try:
-            records = list(attendance_collection.find({
-                "class_num": class_num,
-                "division": division,
-                "date": selected_date
-            }))
-        except Exception as e:
-            print(f"MongoDB fetch error: {e}")
 
-    saved_records = {str(doc['student_roll']): doc['status'] for doc in records}
-    is_submitted = len(records) > 0
-
-    master_list = generate_unique_students(class_num, division)
-    formatted_students = []
-
-    for s in master_list:
-        status = saved_records.get(s['roll'], 'Present') if is_submitted else 'Present'
-        formatted_students.append({
-            "id": s['id'],
-            "name": s['name'],
-            "roll": s['roll'],
-            "status": status
-        })
-        
-    return jsonify({
-        "success": True, 
-        "students": formatted_students,
-        "is_submitted": is_submitted,
-        "is_holiday": holiday,
-        "holiday_reason": reason,
-        "is_future": is_future
-    })
-
-@app.route('/api/generate-avg', methods=['GET'])
-def generate_avg():
-    class_num = request.args.get('class_num', '10')
-    division = request.args.get('division', 'A')
-    selected_date = request.args.get('date')
-    avg_type = request.args.get('type', 'week')
-    
-    ref_date = datetime.strptime(selected_date, "%Y-%m-%d")
-    
-    if avg_type == 'week':
-        start_date = (ref_date - timedelta(days=6)).strftime("%Y-%m-%d")
-        query = {
-            "class_num": class_num,
-            "division": division,
-            "date": {"$gte": start_date, "$lte": selected_date}
-        }
-    else:
-        month_prefix = ref_date.strftime("%Y-%m")
-        query = {
-            "class_num": class_num,
-            "division": division,
-            "date": {"$regex": f"^{month_prefix}"}
-        }
-    
-    records = []
-    attendance_collection = get_collection()
-    if attendance_collection is not None:
-        try:
-            records = list(attendance_collection.find(query))
-        except Exception as e:
-            print(f"MongoDB query error: {e}")
-            
-    students_list = generate_unique_students(class_num, division)
-    
-    student_stats = []
-    for student in students_list:
-        roll = int(student['roll'])
-        student_records = [r for r in records if r['student_roll'] == roll]
-        
-        total_days = len(student_records)
-        present_days = sum(1 for r in student_records if r['status'] == 'Present')
-        
-        pct = round((present_days / total_days) * 100, 1) if total_days > 0 else 0.0
-        
-        student_stats.append({
-            "roll": student['roll'],
-            "name": student['name'],
-            "present": present_days,
-            "total": total_days,
-            "percentage": pct
-        })
-
-    return jsonify({"success": True, "students": student_stats})
-
-@app.route('/api/verify-pin', methods=['POST'])
-def verify_pin():
-    entered_pin = request.json.get('pin', '')
-    if entered_pin == TEACHER_PIN:
-        return jsonify({"success": True, "message": "PIN Verified"}), 200
-    return jsonify({"success": False, "message": "Incorrect PIN!"}), 401
-
-@app.route('/api/verify-teacher', methods=['POST'])
+# STRICT FACE VERIFICATION ROUTE
+@app.route("/api/verify-teacher", methods=["POST"])
 def verify_teacher():
     try:
-        image_data = request.json.get('image', '').split(',')[1]
-        img_bytes = base64.b64decode(image_data)
-        
-        if CV2_AVAILABLE:
-            nparr = np.frombuffer(img_bytes, np.uint8)
-            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            cascade = get_face_cascade()
-            
-            if cascade is not None:
-                faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-                if len(faces) > 0:
-                    return jsonify({"success": True, "message": "Teacher Verified"}), 200
-                return jsonify({"success": False, "message": "Face Not Recognized!"}), 401
+        if not os.path.exists(FACE_ENCODING_PATH):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Teacher face encoding missing on server!",
+                    }
+                ),
+                500,
+            )
 
-        # Fallback if OpenCV isn't available or fails
-        if len(img_bytes) > 1000:
-            return jsonify({"success": True, "message": "Teacher Verified (Fallback)"}), 200
+        # Load saved teacher encoding
+        known_teacher_encoding = np.load(FACE_ENCODING_PATH)
 
-        return jsonify({"success": False, "message": "Invalid Image Data!"}), 400
+        data = request.get_json()
+        image_data = data.get("image")
+
+        if not image_data:
+            return (
+                jsonify({"success": False, "message": "No image captured"}),
+                400,
+            )
+
+        # Decode Base64 string from webcam
+        header, encoded = image_data.split(",", 1)
+        image_bytes = base64.b64decode(encoded)
+        np_arr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        # Extract face encodings from current frame
+        face_encodings = face_recognition.face_encodings(rgb_img)
+
+        if len(face_encodings) == 0:
+            return (
+                jsonify(
+                    {"success": False, "message": "No face detected in camera"}
+                ),
+                400,
+            )
+
+        incoming_encoding = face_encodings[0]
+
+        # Distance calculation (lower distance = closer match)
+        face_distance = face_recognition.face_distance(
+            [known_teacher_encoding], incoming_encoding
+        )[0]
+
+        # Strict Threshold (0.45 or lower strictly limits access to YOUR face)
+        if face_distance < 0.45:
+            return jsonify(
+                {"success": True, "message": "Authentication successful"}
+            )
+        else:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Access Denied: Unrecognized Face",
+                    }
+                ),
+                401,
+            )
+
     except Exception as e:
-        return jsonify({"success": False, "message": f"Verification error: {str(e)}"}), 400
+        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500
 
-@app.route('/api/save-attendance', methods=['POST'])
-def save_attendance():
-    data = request.json
-    class_num = data.get('class_num')
-    division = data.get('division')
-    selected_date = data.get('date')
-    records = data.get('records')
-    
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    if selected_date > today_str:
-        return jsonify({"success": False, "message": "Cannot record attendance for a future date!"}), 400
-    
-    holiday, reason = is_holiday(selected_date)
-    if holiday:
-        return jsonify({"success": False, "message": f"Cannot save attendance: {reason}"}), 400
 
-    attendance_collection = get_collection()
-    if attendance_collection is None:
-        return jsonify({"success": False, "message": "Database connection error"}), 500
+# PIN BACKUP AUTHENTICATION ROUTE
+@app.route("/api/verify-pin", methods=["POST"])
+def verify_pin():
+    data = request.get_json()
+    entered_pin = data.get("pin")
 
-    existing = attendance_collection.find_one({
-        "class_num": class_num,
-        "division": division,
-        "date": selected_date
-    })
-    
-    if existing:
-        return jsonify({"success": False, "message": "Attendance already submitted!"}), 400
-        
-    students_list = generate_unique_students(class_num, division)
-    name_map = {str(s['roll']): s['name'] for s in students_list}
-
-    documents_to_insert = [{
-        "class_num": class_num,
-        "division": division,
-        "date": selected_date,
-        "student_roll": int(roll),
-        "student_name": name_map.get(str(roll), "Unknown Student"),
-        "status": status
-    } for roll, status in records.items()]
-        
-    if documents_to_insert:
-        attendance_collection.insert_many(documents_to_insert)
-
-    return jsonify({"success": True, "message": "Attendance saved to MongoDB Atlas!"})
-
-@app.route('/api/update-attendance', methods=['POST'])
-def update_attendance():
-    data = request.json
-    class_num = data.get('class_num')
-    division = data.get('division')
-    selected_date = data.get('date')
-    records = data.get('records')
-    
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    if selected_date > today_str:
-        return jsonify({"success": False, "message": "Cannot update attendance for a future date!"}), 400
-
-    attendance_collection = get_collection()
-    if attendance_collection is None:
-        return jsonify({"success": False, "message": "Database connection error"}), 500
-
-    students_list = generate_unique_students(class_num, division)
-    name_map = {str(s['roll']): s['name'] for s in students_list}
-
-    for roll, status in records.items():
-        attendance_collection.update_one(
-            {"class_num": class_num, "division": division, "date": selected_date, "student_roll": int(roll)},
-            {"$set": {"student_name": name_map.get(str(roll), "Unknown Student"), "status": status}},
-            upsert=True
+    if entered_pin == TEACHER_PIN:
+        return jsonify(
+            {"success": True, "message": "PIN Verification successful"}
+        )
+    else:
+        return (
+            jsonify({"success": False, "message": "Incorrect Security PIN"}),
+            401,
         )
 
-    return jsonify({"success": True, "message": "Attendance updated successfully!"})
 
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+# FETCH STUDENTS & RECORD STATUS ROUTE
+@app.route("/api/students", methods=["GET"])
+def get_students():
+    class_num = request.args.get("class_num")
+    division = request.args.get("division")
+    date_str = request.args.get("date")
+
+    students = get_sample_students(class_num, division)
+
+    conn = sqlite3.connect("attendance.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT roll_no, status FROM attendance WHERE class_num=? AND division=? AND date=?",
+        (class_num, division, date_str),
+    )
+    records = dict(cursor.fetchall())
+    conn.close()
+
+    is_submitted = len(records) > 0
+
+    student_list = []
+    for s in students:
+        status = records.get(s["roll"], "Present")
+        student_list.append(
+            {"roll": s["roll"], "name": s["name"], "status": status}
+        )
+
+    return jsonify(
+        {
+            "success": True,
+            "students": student_list,
+            "is_submitted": is_submitted,
+            "is_holiday": False,
+            "is_future": False,
+        }
+    )
+
+
+# SAVE ATTENDANCE ROUTE
+@app.route("/api/save-attendance", methods=["POST"])
+def save_attendance():
+    data = request.get_json()
+    class_num = data.get("class_num")
+    division = data.get("division")
+    date_str = data.get("date")
+    records = data.get("records")
+
+    conn = sqlite3.connect("attendance.db")
+    cursor = conn.cursor()
+
+    try:
+        for roll_no, status in records.items():
+            cursor.execute(
+                """
+                INSERT INTO attendance (class_num, division, date, roll_no, status)
+                VALUES (?, ?, ?, ?, ?)
+            """,
+                (class_num, division, date_str, roll_no, status),
+            )
+        conn.commit()
+        conn.close()
+        return jsonify(
+            {"success": True, "message": "Attendance saved successfully!"}
+        )
+    except sqlite3.IntegrityError:
+        conn.close()
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "Attendance already submitted for this date.",
+                }
+            ),
+            400,
+        )
+
+
+# UPDATE ATTENDANCE ROUTE
+@app.route("/api/update-attendance", methods=["POST"])
+def update_attendance():
+    data = request.get_json()
+    class_num = data.get("class_num")
+    division = data.get("division")
+    date_str = data.get("date")
+    records = data.get("records")
+
+    conn = sqlite3.connect("attendance.db")
+    cursor = conn.cursor()
+
+    for roll_no, status in records.items():
+        cursor.execute(
+            """
+            UPDATE attendance SET status=? 
+            WHERE class_num=? AND division=? AND date=? AND roll_no=?
+        """,
+            (status, class_num, division, date_str, roll_no),
+        )
+
+    conn.commit()
+    conn.close()
+    return jsonify(
+        {"success": True, "message": "Attendance updated successfully!"}
+    )
+
+
+# ANALYTICS / GENERATE AVERAGE STATS ROUTE
+@app.route("/api/generate-avg", methods=["GET"])
+def generate_avg():
+    class_num = request.args.get("class_num")
+    division = request.args.get("division")
+
+    students = get_sample_students(class_num, division)
+
+    conn = sqlite3.connect("attendance.db")
+    cursor = conn.cursor()
+
+    avg_data = []
+    for s in students:
+        cursor.execute(
+            "SELECT status FROM attendance WHERE class_num=? AND division=? AND roll_no=?",
+            (class_num, division, s["roll"]),
+        )
+        rows = cursor.fetchall()
+
+        total = len(rows)
+        present = sum(1 for r in rows if r[0] == "Present")
+        percentage = round((present / total) * 100) if total > 0 else 100
+
+        avg_data.append(
+            {
+                "roll": s["roll"],
+                "name": s["name"],
+                "present": present,
+                "total": total if total > 0 else 1,
+                "percentage": percentage,
+            }
+        )
+
+    conn.close()
+    return jsonify({"success": True, "students": avg_data})
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
