@@ -22,6 +22,7 @@
       color: #ffffff;
       animation: fadeOutOverlay 0.8s ease-in-out 2.5s forwards;
       pointer-events: none;
+      padding: 20px;
     }
     @keyframes fadeOutOverlay {
       0% { opacity: 1; visibility: visible; }
@@ -30,6 +31,7 @@
     .intro-box {
       text-align: center;
       animation: zoomInIntro 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      max-width: 100%;
     }
     @keyframes zoomInIntro {
       0% { opacity: 0; transform: scale(0.7) translateY(20px); }
@@ -72,9 +74,9 @@
     /* --- MAIN APP STYLES --- */
     .container { max-width: 980px; margin: 0 auto; background: #ffffff; padding: 35px; border-radius: 20px; box-shadow: 0 15px 35px rgba(112, 144, 176, 0.12); }
     
-    .school-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #f4f7fe; padding-bottom: 20px; margin-bottom: 25px; }
+    .school-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #f4f7fe; padding-bottom: 20px; margin-bottom: 25px; flex-wrap: wrap; gap: 15px; }
     .brand { display: flex; align-items: center; gap: 15px; }
-    .logo-icon { width: 48px; height: 48px; background: #4318ff; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1.5rem; font-weight: 700; }
+    .logo-icon { width: 48px; height: 48px; background: #4318ff; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1.5rem; font-weight: 700; flex-shrink: 0; }
     .school-title h1 { font-size: 1.4rem; font-weight: 700; color: #1b2559; }
     .school-title p { font-size: 0.85rem; color: #707eae; font-weight: 500; }
     
@@ -85,14 +87,15 @@
     .controls-card { background: #f8f9ff; padding: 20px; border-radius: 14px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; align-items: end; margin-bottom: 25px; }
     .control-group { display: flex; flex-direction: column; gap: 6px; }
     .control-group label { font-size: 0.8rem; font-weight: 700; color: #707eae; text-transform: uppercase; }
-    .control-group select, .control-group input { padding: 10px 14px; border-radius: 10px; border: 1px solid #e0e5f2; font-weight: 600; color: #2b3674; outline: none; background: #fff; height: 42px; }
+    .control-group select, .control-group input { padding: 10px 14px; border-radius: 10px; border: 1px solid #e0e5f2; font-weight: 600; color: #2b3674; outline: none; background: #fff; height: 42px; width: 100%; }
     
     .banner { padding: 14px 18px; border-radius: 10px; font-weight: 600; margin-bottom: 20px; display: none; text-align: center; }
     .banner-holiday { background: #e7f0ff; color: #1a56db; border: 1px solid #b8d2fe; }
     .banner-submitted { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
     .banner-future { background: #ffebe9; color: #ee5d50; border: 1px solid #fdc5c1; }
 
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .table-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 500px; }
     th, td { padding: 14px; text-align: left; border-bottom: 1px solid #e0e5f2; vertical-align: middle; }
     th { background: #ffffff; color: #707eae; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; }
     
@@ -117,9 +120,9 @@
     .btn-save:hover { background: #04b385; }
     .btn-save:disabled { background: #e0e5f2; color: #a3aed0; cursor: not-allowed; }
     
-    .modal { display: none; position: fixed; inset: 0; background: rgba(11, 14, 38, 0.5); justify-content: center; align-items: center; z-index: 100; backdrop-filter: blur(4px); }
+    .modal { display: none; position: fixed; inset: 0; background: rgba(11, 14, 38, 0.5); justify-content: center; align-items: center; z-index: 100; backdrop-filter: blur(4px); padding: 15px; }
     .modal.open { display: flex; }
-    .modal-box { background: #fff; padding: 30px; border-radius: 20px; width: 450px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.15); max-height: 85vh; display: flex; flex-direction: column; }
+    .modal-box { background: #fff; padding: 30px; border-radius: 20px; width: 100%; max-width: 450px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.15); max-height: 85vh; display: flex; flex-direction: column; }
     .tab-group { display: flex; background: #f4f7fe; border-radius: 10px; padding: 4px; margin-bottom: 20px; }
     .tab-btn { flex: 1; padding: 8px; border: none; background: transparent; font-weight: 600; border-radius: 8px; cursor: pointer; color: #707eae; }
     .tab-btn.active { background: #fff; color: #4318ff; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
@@ -133,6 +136,24 @@
 
     video { width: 100%; height: 200px; object-fit: cover; border-radius: 12px; background: #000; transform: scaleX(-1); margin: 15px 0; }
     .pin-input { width: 100%; padding: 14px; font-size: 1.2rem; text-align: center; letter-spacing: 8px; border-radius: 10px; border: 1px solid #e0e5f2; margin: 20px 0; font-weight: 700; }
+
+    /* --- RESPONSIVE MEDIA QUERIES --- */
+    @media (max-width: 850px) {
+      body { padding: 15px 10px; }
+      .container { padding: 20px; }
+      .controls-card { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 580px) {
+      .school-header { flex-direction: column; align-items: flex-start; }
+      .school-header > div:last-child { width: 100%; flex-wrap: wrap; }
+      .controls-card { grid-template-columns: 1fr; }
+      .intro-title { font-size: 1.6rem; }
+      .intro-logo { width: 70px; height: 70px; font-size: 2.2rem; }
+      .intro-sub { font-size: 0.95rem; }
+      .radio-group { gap: 10px; }
+      .modal-box { padding: 20px; }
+    }
   </style>
 </head>
 <body>
@@ -209,16 +230,18 @@
     ⚠️ Attendance for this Class, Division, and Date has already been submitted and recorded.
   </div>
 
-  <table>
-    <thead>
-      <tr>
-        <th>Roll No</th>
-        <th>Student Name</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody id="studentTable"></tbody>
-  </table>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Roll No</th>
+          <th>Student Name</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="studentTable"></tbody>
+    </table>
+  </div>
 
   <button id="saveBtn" class="btn btn-save" onclick="saveAttendance()">Save Attendance</button>
 </div>
