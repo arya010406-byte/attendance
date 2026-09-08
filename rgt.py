@@ -1,39 +1,35 @@
 import cv2
-import face_recognition
-import numpy as np
+import os
 
-def register_teacher():
-    print("Opening webcam... Look at the camera and press 's' to save your face, or 'q' to quit.")
+REFERENCE_IMAGE_PATH = "reference_face.jpg"
+
+def capture_reference_face():
+    print("Opening camera... Press 'SPACE' to capture your face, or 'ESC' to exit.")
     cap = cv2.VideoCapture(0)
+
+    if not cap.isOpened():
+        print("Error: Unable to access the camera.")
+        return
 
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("Failed to access camera.")
+            print("Failed to grab camera frame.")
             break
 
-        # Show live feed
-        cv2.imshow("Register Teacher Face - Press 's' to Save", frame)
+        cv2.imshow("Press SPACE to Save Face | ESC to Cancel", frame)
         key = cv2.waitKey(1) & 0xFF
 
-        if key == ord('s'):
-            # Convert BGR to RGB
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            encodings = face_recognition.face_encodings(rgb_frame)
-
-            if len(encodings) > 0:
-                np.save("teacher_face.npy", encodings[0])
-                print("✓ Teacher face successfully registered and saved to 'teacher_face.npy'!")
-                break
-            else:
-                print("⚠️ No face detected. Please align your face and press 's' again.")
-
-        elif key == ord('q'):
-            print("Registration canceled.")
+        if key == 32:  # SPACEBAR
+            cv2.imwrite(REFERENCE_IMAGE_PATH, frame)
+            print(f"Success! Reference face saved as '{REFERENCE_IMAGE_PATH}'. Exiting...")
+            break
+        elif key == 27:  # ESC
+            print("Cancelled face registration.")
             break
 
     cap.release()
     cv2.destroyAllWindows()
 
-if __name__ == '__main__':
-    register_teacher()
+if __name__ == "__main__":
+    capture_reference_face()
