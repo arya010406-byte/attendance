@@ -3,4 +3,4 @@ flask-cors
 pymongo
 gunicorn
 dlib-bin
-face_recognition
+face-recognition --no-build-isolation
