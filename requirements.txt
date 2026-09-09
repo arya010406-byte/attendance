@@ -5,3 +5,4 @@ gunicorn
 Click
 Pillow
 numpy
+face_recognition_models
