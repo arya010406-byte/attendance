@@ -1,7 +1,7 @@
 FROM python:3.10-slim
 
-# Install system compilation headers
-RUN apt-get update && apt-get install -y \
+# Install C++ dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     libopenblas-dev \
@@ -11,9 +11,8 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Upgrade pip and install dlib binary first to skip CMake memory spikes
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
-RUN pip install --no-cache-dir dlib-bin
+# Limit compilation to a single core so Render does not run out of RAM
+ENV MAKEFLAGS="-j1"
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
