@@ -1,21 +1,22 @@
 FROM python:3.10-slim
 
-# Install C++ dependencies
+# Install light runtime dependencies (no heavy compilers needed)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    cmake \
     libopenblas-dev \
     liblapack-dev \
     libx11-dev \
+    libgl1-mesa-glx \
     && rm -rf /var/lib/apt-get/lists/*
 
 WORKDIR /app
 
-# Limit compilation to a single core so Render does not run out of RAM
-ENV MAKEFLAGS="-j1"
+# Upgrade pip and force pre-compiled binary wheel installation
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir dlib-bin
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install face_recognition without allowing source builds
+RUN pip install --no-cache-dir --only-binary=:all: -r requirements.txt || pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
