@@ -1,22 +1,22 @@
 FROM python:3.10-slim
 
-# Install light runtime dependencies (no heavy compilers needed)
+# Install runtime system packages (no compilers)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenblas-dev \
     liblapack-dev \
     libx11-dev \
-    libgl1-mesa-glx \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt-get/lists/*
 
 WORKDIR /app
 
-# Upgrade pip and force pre-compiled binary wheel installation
+# Install precompiled dlib binary directly
 RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir dlib-bin
 
 COPY requirements.txt .
-# Install face_recognition without allowing source builds
-RUN pip install --no-cache-dir --only-binary=:all: -r requirements.txt || pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
