@@ -1,7 +1,9 @@
 FROM python:3.10-slim
 
-# Install runtime system packages (no compilers)
+# Install C++ build tools and system headers
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
     libopenblas-dev \
     liblapack-dev \
     libx11-dev \
@@ -11,11 +13,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install precompiled dlib binary directly
-RUN pip install --no-cache-dir --upgrade pip
+# Force single-threaded compilation to save memory
+ENV MAKEFLAGS="-j1"
+
+# Upgrade build tools
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install pre-built wheel package first
 RUN pip install --no-cache-dir dlib-bin
 
 COPY requirements.txt .
+# Install face_recognition without allowing it to rebuild dlib from source
+RUN pip install --no-cache-dir --no-deps face_recognition face_recognition_models
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .

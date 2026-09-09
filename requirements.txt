@@ -2,4 +2,6 @@ flask
 flask-cors
 pymongo
 gunicorn
-face_recognition
+Click
+Pillow
+numpy
