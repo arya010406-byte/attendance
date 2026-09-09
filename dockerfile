@@ -1,6 +1,5 @@
 FROM python:3.10-slim
 
-# Install C++ build tools and system headers
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -9,22 +8,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libx11-dev \
     libgl1 \
     libglib2.0-0 \
+    git \
     && rm -rf /var/lib/apt-get/lists/*
 
 WORKDIR /app
 
-# Force single-threaded compilation to save memory
-ENV MAKEFLAGS="-j1"
-
-# Upgrade build tools
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
-
-# Install pre-built wheel package first
 RUN pip install --no-cache-dir dlib-bin
 
+# Install face_recognition and its required models package directly
+RUN pip install --no-cache-dir git+https://github.com/ageitgey/face_recognition_models
+RUN pip install --no-cache-dir --no-deps face_recognition
+
 COPY requirements.txt .
-# Install face_recognition without allowing it to rebuild dlib from source
-RUN pip install --no-cache-dir --no-deps face_recognition face_recognition_models
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
