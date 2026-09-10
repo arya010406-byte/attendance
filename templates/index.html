@@ -228,7 +228,7 @@
             width: 100%; height: 280px; background: #000; border-radius: 20px; overflow: hidden; position: relative; margin-bottom: 22px; 
             display: flex; justify-content: center; align-items: center; border: 2px solid var(--card-border); 
         }
-        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); } /* Mirror Camera View */
+        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
         .scan-line { position: absolute; top: 0; left: 0; width: 100%; height: 4px; background: #38bdf8; box-shadow: 0 0 25px #38bdf8; animation: scan 1.8s ease-in-out infinite alternate; z-index: 10;}
         .scan-status { 
             position: absolute; bottom: 14px; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px); 
@@ -500,8 +500,6 @@
         // Multi-Angle Liveness & Match Detection States
         let isLivenessActive = false;
         let modelsLoaded = false;
-        let faceMatchVerified = false;
-        let isVerifyingMatch = false;
         const poseSequence = ['LEFT', 'RIGHT'];
         let currentPoseIndex = 0;
 
@@ -558,62 +556,14 @@
             return 'CENTER';
         }
 
-        function captureVideoBlob(video) {
-            return new Promise((resolve) => {
-                const canvas = document.createElement("canvas");
-                canvas.width = video.videoWidth || 640;
-                canvas.height = video.videoHeight || 480;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                canvas.toBlob((blob) => resolve(blob), 'image/jpeg');
-            });
-        }
-
-        // API Check against registered face with graceful fallback
-        async function verifyFaceMatchWithBackend(video) {
-            isVerifyingMatch = true;
-            try {
-                const blob = await captureVideoBlob(video);
-                const formData = new FormData();
-                formData.append("photo", blob, "scan.jpg");
-
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-                const res = await fetch('/api/auth/verify-face-match', { 
-                    method: 'POST', 
-                    body: formData,
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-
-                if (!res.ok) {
-                    isVerifyingMatch = false;
-                    return true;
-                }
-
-                const data = await res.json();
-                isVerifyingMatch = false;
-
-                if (data.success === false) {
-                    return false;
-                }
-                return true;
-            } catch (err) {
-                isVerifyingMatch = false;
-                // Safe fallback to allow verification via pose check
-                return true; 
-            }
-        }
-
-        // Real-Time Match First & Liveness Loop
+        // Real-Time Liveness Detection Loop (Immediate Unlock)
         async function runLivenessDetectionLoop() {
             if (!isLivenessActive) return;
 
             const video = document.getElementById("webcam");
             const statusText = document.getElementById("scan-status-text");
 
-            if (video.paused || video.ended || !modelsLoaded || isVerifyingMatch) {
+            if (video.paused || video.ended || !modelsLoaded) {
                 requestAnimationFrame(runLivenessDetectionLoop);
                 return;
             }
@@ -626,42 +576,24 @@
                 return;
             }
 
-            // PHASE 1: Verify face matches registration FIRST
-            if (!faceMatchVerified) {
-                statusText.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Matching face...`;
-                const isMatched = await verifyFaceMatchWithBackend(video);
-
-                if (!isMatched) {
-                    isLivenessActive = false;
-                    statusText.textContent = "Face Invalid";
-                    showToast("Face Invalid: Unrecognized face!", "error");
-                    setTimeout(resetLivenessState, 2500);
-                    return;
-                }
-
-                faceMatchVerified = true;
-                showToast("Face Matched! Perform live check.", "success");
-            }
-
-            // PHASE 2: Live human movement prompts (Turn Left / Right to avoid photo spoofs)
+            // Live human movement prompts (Turn Left / Right)
             const targetPose = poseSequence[currentPoseIndex];
 
             if (targetPose === 'LEFT') {
-                statusText.innerHTML = `<i class="fa-solid fa-arrow-left"></i> Instruction: Turn Head <strong>LEFT</strong>`;
+                statusText.innerHTML = `<i class="fa-solid fa-arrow-left"></i> Turn Head <strong>LEFT</strong>`;
             } else if (targetPose === 'RIGHT') {
-                statusText.innerHTML = `<i class="fa-solid fa-arrow-right"></i> Instruction: Turn Head <strong>RIGHT</strong>`;
+                statusText.innerHTML = `<i class="fa-solid fa-arrow-right"></i> Turn Head <strong>RIGHT</strong>`;
             }
 
             const detectedPose = detectHeadOrientation(detection.landmarks);
 
             if (detectedPose === targetPose) {
-                showToast(`Verified Pose: ${targetPose}`, "success");
                 currentPoseIndex++;
 
-                // PHASE 3: Complete & Unlock Website Immediately
+                // Instantly unlock portal once pose sequence is matched
                 if (currentPoseIndex >= poseSequence.length) {
                     isLivenessActive = false;
-                    statusText.innerHTML = `<i class="fa-solid fa-circle-check"></i> Verification Complete! Opening...`;
+                    statusText.innerHTML = `<i class="fa-solid fa-circle-check"></i> Face Match Complete! Opening...`;
                     grantPortalAccess("Live Face Scan Verified");
                     return;
                 }
@@ -670,14 +602,6 @@
             if (isLivenessActive) {
                 setTimeout(() => requestAnimationFrame(runLivenessDetectionLoop), 100);
             }
-        }
-
-        function resetLivenessState() {
-            currentPoseIndex = 0;
-            faceMatchVerified = false;
-            isVerifyingMatch = false;
-            isLivenessActive = true;
-            runLivenessDetectionLoop();
         }
 
         document.addEventListener("DOMContentLoaded", () => {
@@ -853,8 +777,6 @@
 
                     webcam.onloadedmetadata = () => {
                         currentPoseIndex = 0;
-                        faceMatchVerified = false;
-                        isVerifyingMatch = false;
                         isLivenessActive = true;
                         runLivenessDetectionLoop();
                     };
