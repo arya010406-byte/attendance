@@ -588,9 +588,20 @@
                 const date = dateInput.value;
 
                 const attendanceRecord = {};
+                let selectedCount = 0;
+
                 for (let rollNo = 1; rollNo <= 35; rollNo++) {
                     const checked = document.querySelector(`input[name="status-${rollNo}"]:checked`);
-                    attendanceRecord[rollNo] = checked ? checked.value : "Absent";
+                    if (checked) {
+                        attendanceRecord[rollNo] = checked.value;
+                        selectedCount++;
+                    }
+                }
+
+                // Strict validation requiring all 35 students to be marked
+                if (selectedCount < 35) {
+                    showToast(`Attendance incomplete! Marked: ${selectedCount}/35. Please mark all students.`, "warning");
+                    return;
                 }
 
                 showToast("Saving to MongoDB Atlas...", "info");
