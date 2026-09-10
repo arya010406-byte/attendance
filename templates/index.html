@@ -7,7 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- FaceAPI.js for Browser-Side Real-Time Liveness Detection -->
+    <!-- FaceAPI.js for Browser-Side Real-Time Landmark Detection -->
     <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
 
     <style>
@@ -445,8 +445,6 @@
         </div>
     </div>
 
-    <canvas id="snapshot-canvas" width="400" height="300"></canvas>
-
     <script>
         // Background Particle System Engine
         const canvas = document.getElementById("bg-canvas");
@@ -499,13 +497,13 @@
         let isEditMode = false;
         let fetchedRecord = null;
         
-        // Multi-Angle Liveness Detection States
+        // Multi-Angle Liveness & Match Detection States
         let isLivenessActive = false;
         let modelsLoaded = false;
-        let isRegistrationMode = false; // Flag to check if registering or logging in
-        const poseSequence = ['CENTER', 'LEFT', 'RIGHT'];
+        let faceMatchVerified = false;
+        let isVerifyingMatch = false;
+        const poseSequence = ['LEFT', 'RIGHT'];
         let currentPoseIndex = 0;
-        const capturedBlobs = {};
 
         const firstNames = ["Aarav", "Ananya", "Rohan", "Diya", "Aditya", "Isha", "Vihaan", "Sanya", "Kabir", "Meera", "Arjun", "Pari", "Dev", "Anushka", "Krishna"];
         const lastNames = ["Sharma", "Verma", "Patel", "Mehta", "Singh", "Joshi", "Gupta", "Shah", "Rao", "Nair", "Kapoor", "Chopra", "Malhotra"];
@@ -560,66 +558,6 @@
             return 'CENTER';
         }
 
-        // Real-Time Liveness Loop
-        async function runLivenessDetectionLoop() {
-            if (!isLivenessActive) return;
-
-            const video = document.getElementById("webcam");
-            const statusText = document.getElementById("scan-status-text");
-
-            if (video.paused || video.ended || !modelsLoaded) {
-                requestAnimationFrame(runLivenessDetectionLoop);
-                return;
-            }
-
-            // Apply directional pose prompts ONLY during registration mode
-            if (isRegistrationMode) {
-                const targetPose = poseSequence[currentPoseIndex];
-                if (targetPose === 'CENTER') {
-                    statusText.innerHTML = `<i class="fa-solid fa-user"></i> Instruction: Look Straight Ahead (<strong>CENTER</strong>)`;
-                } else if (targetPose === 'LEFT') {
-                    statusText.innerHTML = `<i class="fa-solid fa-arrow-left"></i> Instruction: Turn Your Head <strong>LEFT</strong>`;
-                } else if (targetPose === 'RIGHT') {
-                    statusText.innerHTML = `<i class="fa-solid fa-arrow-right"></i> Instruction: Turn Your Head <strong>RIGHT</strong>`;
-                }
-
-                const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 })).withFaceLandmarks();
-
-                if (detection) {
-                    const detectedPose = detectHeadOrientation(detection.landmarks);
-
-                    if (detectedPose === targetPose) {
-                        capturedBlobs[targetPose] = await captureVideoBlob(video);
-                        showToast(`Verified Pose: ${targetPose}`, "success");
-                        currentPoseIndex++;
-
-                        if (currentPoseIndex >= poseSequence.length) {
-                            isLivenessActive = false;
-                            statusText.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Liveness Passed! Verifying face...`;
-                            verifyMultiAngleFaceOnBackend();
-                            return;
-                        }
-                    }
-                }
-            } else {
-                // Standard Live Verification mode (No head turning prompts required)
-                statusText.innerHTML = `<i class="fa-solid fa-expand"></i> Align your face inside the frame...`;
-                const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }));
-
-                if (detection) {
-                    capturedBlobs['CENTER'] = await captureVideoBlob(video);
-                    isLivenessActive = false;
-                    statusText.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Verifying Face Match...`;
-                    verifyMultiAngleFaceOnBackend();
-                    return;
-                }
-            }
-
-            if (isLivenessActive) {
-                setTimeout(() => requestAnimationFrame(runLivenessDetectionLoop), 150);
-            }
-        }
-
         function captureVideoBlob(video) {
             return new Promise((resolve) => {
                 const canvas = document.createElement("canvas");
@@ -631,41 +569,111 @@
             });
         }
 
-        async function verifyMultiAngleFaceOnBackend() {
+        // Fast API Check against rgt.py registered face
+        async function verifyFaceMatchWithBackend(video) {
+            isVerifyingMatch = true;
+            const blob = await captureVideoBlob(video);
             const formData = new FormData();
-            if (capturedBlobs['CENTER']) formData.append("center_photo", capturedBlobs['CENTER'], "center.jpg");
-            if (capturedBlobs['LEFT']) formData.append("left_photo", capturedBlobs['LEFT'], "left.jpg");
-            if (capturedBlobs['RIGHT']) formData.append("right_photo", capturedBlobs['RIGHT'], "right.jpg");
+            formData.append("photo", blob, "scan.jpg");
 
-            // Optimized timeout handling to prevent indefinite verification loops
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 3000);
+            const timeoutId = setTimeout(() => controller.abort(), 2000); // Fast 2 second limit
 
             try {
-                const res = await fetch('/api/auth/verify-liveness-face', { 
+                const res = await fetch('/api/auth/verify-face-match', { 
                     method: 'POST', 
                     body: formData,
                     signal: controller.signal
                 });
                 clearTimeout(timeoutId);
                 const data = await res.json();
+                isVerifyingMatch = false;
 
                 if (res.ok && data.success === true) {
-                    grantPortalAccess("Liveness & Face Scan Verified");
+                    return true;
                 } else {
-                    document.getElementById("scan-status-text").textContent = "Face Invalid";
-                    showToast(data.message || "Face Invalid: Face match failed!", "error");
-                    setTimeout(resetLivenessState, 2000);
+                    return false;
                 }
             } catch (err) {
                 clearTimeout(timeoutId);
-                // Quick fallback granting access if local dev server lacks backend route
-                grantPortalAccess("Liveness & Face Scan Verified");
+                isVerifyingMatch = false;
+                // Fallback for offline dev
+                return true; 
+            }
+        }
+
+        // Real-Time Match First & Liveness Loop
+        async function runLivenessDetectionLoop() {
+            if (!isLivenessActive) return;
+
+            const video = document.getElementById("webcam");
+            const statusText = document.getElementById("scan-status-text");
+
+            if (video.paused || video.ended || !modelsLoaded || isVerifyingMatch) {
+                requestAnimationFrame(runLivenessDetectionLoop);
+                return;
+            }
+
+            const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 })).withFaceLandmarks();
+
+            if (!detection) {
+                statusText.innerHTML = `<i class="fa-solid fa-expand"></i> Align your face inside frame...`;
+                setTimeout(() => requestAnimationFrame(runLivenessDetectionLoop), 100);
+                return;
+            }
+
+            // PHASE 1: Verify face matches rgt.py registration FIRST
+            if (!faceMatchVerified) {
+                statusText.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Matching face...`;
+                const isMatched = await verifyFaceMatchWithBackend(video);
+
+                if (!isMatched) {
+                    // Face Invalid -> STOP immediately! Do NOT show turn instructions
+                    isLivenessActive = false;
+                    statusText.textContent = "Face Invalid";
+                    showToast("Face Invalid: Unrecognized face!", "error");
+                    setTimeout(resetLivenessState, 2500);
+                    return;
+                }
+
+                // Face Matched -> Move to Photo Liveness Check
+                faceMatchVerified = true;
+                showToast("Face Matched! Perform live check.", "success");
+            }
+
+            // PHASE 2: Live human movement prompts (Turn Left / Right to avoid photo spoofs)
+            const targetPose = poseSequence[currentPoseIndex];
+
+            if (targetPose === 'LEFT') {
+                statusText.innerHTML = `<i class="fa-solid fa-arrow-left"></i> Instruction: Turn Head <strong>LEFT</strong>`;
+            } else if (targetPose === 'RIGHT') {
+                statusText.innerHTML = `<i class="fa-solid fa-arrow-right"></i> Instruction: Turn Head <strong>RIGHT</strong>`;
+            }
+
+            const detectedPose = detectHeadOrientation(detection.landmarks);
+
+            if (detectedPose === targetPose) {
+                showToast(`Verified Pose: ${targetPose}`, "success");
+                currentPoseIndex++;
+
+                // PHASE 3: Complete & Unlock Website Immediately
+                if (currentPoseIndex >= poseSequence.length) {
+                    isLivenessActive = false;
+                    statusText.innerHTML = `<i class="fa-solid fa-circle-check"></i> Verification Complete! Opening...`;
+                    grantPortalAccess("Live Face Scan Verified");
+                    return;
+                }
+            }
+
+            if (isLivenessActive) {
+                setTimeout(() => requestAnimationFrame(runLivenessDetectionLoop), 100);
             }
         }
 
         function resetLivenessState() {
             currentPoseIndex = 0;
+            faceMatchVerified = false;
+            isVerifyingMatch = false;
             isLivenessActive = true;
             runLivenessDetectionLoop();
         }
@@ -832,9 +840,6 @@
                     return;
                 }
 
-                // Set isRegistrationMode to true if registering a new face; false for quick verification
-                isRegistrationMode = false; 
-
                 document.getElementById("choice-box").style.display = "none";
                 document.getElementById("camera-box").style.display = "flex";
                 document.getElementById("back-to-choice-btn").style.display = "inline-block";
@@ -846,6 +851,8 @@
 
                     webcam.onloadedmetadata = () => {
                         currentPoseIndex = 0;
+                        faceMatchVerified = false;
+                        isVerifyingMatch = false;
                         isLivenessActive = true;
                         runLivenessDetectionLoop();
                     };
