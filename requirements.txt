@@ -3,3 +3,4 @@ pymongo
 opencv-python-headless
 numpy
 Pillow
+gunicorn
