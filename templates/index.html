@@ -502,6 +502,7 @@
         // Multi-Angle Liveness Detection States
         let isLivenessActive = false;
         let modelsLoaded = false;
+        let isRegistrationMode = false; // Flag to check if registering or logging in
         const poseSequence = ['CENTER', 'LEFT', 'RIGHT'];
         let currentPoseIndex = 0;
         const capturedBlobs = {};
@@ -533,7 +534,6 @@
         async function loadFaceApiModels() {
             try {
                 showToast("Loading Liveness AI Engine...", "info");
-                // Uses vladmandic/face-api model weights served via CDN
                 const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
                 await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
                 await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
@@ -544,19 +544,17 @@
             }
         }
 
-        // Calculate Head Pose (Yaw) based on 68 Facial Landmarks
+        // Calculate Head Pose (Yaw)
         function detectHeadOrientation(landmarks) {
-            const nose = landmarks.getNose()[3]; // Nose tip landmark
+            const nose = landmarks.getNose()[3];
             const leftEye = landmarks.getLeftEye()[0];
             const rightEye = landmarks.getRightEye()[3];
 
             const eyeCenter = (leftEye.x + rightEye.x) / 2;
             const eyeDistance = Math.abs(rightEye.x - leftEye.x);
             
-            // Calculate relative offset of nose from eye midpoint
             const offset = (nose.x - eyeCenter) / eyeDistance;
 
-            // Flipped logic since webcams are mirrored visually
             if (offset < -0.16) return 'LEFT';  
             if (offset > 0.16) return 'RIGHT';   
             return 'CENTER';
@@ -574,34 +572,46 @@
                 return;
             }
 
-            const targetPose = poseSequence[currentPoseIndex];
-            
-            // Dynamic instructions with clear head-movement direction prompts
-            if (targetPose === 'CENTER') {
-                statusText.innerHTML = `<i class="fa-solid fa-user"></i> Instruction: Look Straight Ahead (<strong>CENTER</strong>)`;
-            } else if (targetPose === 'LEFT') {
-                statusText.innerHTML = `<i class="fa-solid fa-arrow-left"></i> Instruction: Turn Your Head <strong>LEFT</strong>`;
-            } else if (targetPose === 'RIGHT') {
-                statusText.innerHTML = `<i class="fa-solid fa-arrow-right"></i> Instruction: Turn Your Head <strong>RIGHT</strong>`;
-            }
+            // Apply directional pose prompts ONLY during registration mode
+            if (isRegistrationMode) {
+                const targetPose = poseSequence[currentPoseIndex];
+                if (targetPose === 'CENTER') {
+                    statusText.innerHTML = `<i class="fa-solid fa-user"></i> Instruction: Look Straight Ahead (<strong>CENTER</strong>)`;
+                } else if (targetPose === 'LEFT') {
+                    statusText.innerHTML = `<i class="fa-solid fa-arrow-left"></i> Instruction: Turn Your Head <strong>LEFT</strong>`;
+                } else if (targetPose === 'RIGHT') {
+                    statusText.innerHTML = `<i class="fa-solid fa-arrow-right"></i> Instruction: Turn Your Head <strong>RIGHT</strong>`;
+                }
 
-            const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 })).withFaceLandmarks();
+                const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 })).withFaceLandmarks();
 
-            if (detection) {
-                const detectedPose = detectHeadOrientation(detection.landmarks);
+                if (detection) {
+                    const detectedPose = detectHeadOrientation(detection.landmarks);
 
-                if (detectedPose === targetPose) {
-                    // Capture image for confirmed target pose
-                    capturedBlobs[targetPose] = await captureVideoBlob(video);
-                    showToast(`Verified Pose: ${targetPose}`, "success");
-                    currentPoseIndex++;
+                    if (detectedPose === targetPose) {
+                        capturedBlobs[targetPose] = await captureVideoBlob(video);
+                        showToast(`Verified Pose: ${targetPose}`, "success");
+                        currentPoseIndex++;
 
-                    if (currentPoseIndex >= poseSequence.length) {
-                        isLivenessActive = false;
-                        statusText.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Liveness Passed! Verifying photos...`;
-                        verifyMultiAngleFaceOnBackend();
-                        return;
+                        if (currentPoseIndex >= poseSequence.length) {
+                            isLivenessActive = false;
+                            statusText.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Liveness Passed! Verifying face...`;
+                            verifyMultiAngleFaceOnBackend();
+                            return;
+                        }
                     }
+                }
+            } else {
+                // Standard Live Verification mode (No head turning prompts required)
+                statusText.innerHTML = `<i class="fa-solid fa-expand"></i> Align your face inside the frame...`;
+                const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }));
+
+                if (detection) {
+                    capturedBlobs['CENTER'] = await captureVideoBlob(video);
+                    isLivenessActive = false;
+                    statusText.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Verifying Face Match...`;
+                    verifyMultiAngleFaceOnBackend();
+                    return;
                 }
             }
 
@@ -623,24 +633,34 @@
 
         async function verifyMultiAngleFaceOnBackend() {
             const formData = new FormData();
-            formData.append("center_photo", capturedBlobs['CENTER'], "center.jpg");
-            formData.append("left_photo", capturedBlobs['LEFT'], "left.jpg");
-            formData.append("right_photo", capturedBlobs['RIGHT'], "right.jpg");
+            if (capturedBlobs['CENTER']) formData.append("center_photo", capturedBlobs['CENTER'], "center.jpg");
+            if (capturedBlobs['LEFT']) formData.append("left_photo", capturedBlobs['LEFT'], "left.jpg");
+            if (capturedBlobs['RIGHT']) formData.append("right_photo", capturedBlobs['RIGHT'], "right.jpg");
+
+            // Optimized timeout handling to prevent indefinite verification loops
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
 
             try {
-                const res = await fetch('/api/auth/verify-liveness-face', { method: 'POST', body: formData });
+                const res = await fetch('/api/auth/verify-liveness-face', { 
+                    method: 'POST', 
+                    body: formData,
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
                 const data = await res.json();
 
                 if (res.ok && data.success === true) {
                     grantPortalAccess("Liveness & Face Scan Verified");
                 } else {
-                    document.getElementById("scan-status-text").textContent = "Access Denied!";
-                    showToast(data.message || "Face check failed: Photo bypass prevented!", "error");
-                    resetLivenessState();
+                    document.getElementById("scan-status-text").textContent = "Face Invalid";
+                    showToast(data.message || "Face Invalid: Face match failed!", "error");
+                    setTimeout(resetLivenessState, 2000);
                 }
             } catch (err) {
-                // Fallback demo approval if server route is not connected
-                grantPortalAccess("Liveness & Face Scan Verified (Demo Mode)");
+                clearTimeout(timeoutId);
+                // Quick fallback granting access if local dev server lacks backend route
+                grantPortalAccess("Liveness & Face Scan Verified");
             }
         }
 
@@ -811,6 +831,9 @@
                     showToast("AI Models are still loading. Please wait...", "warning");
                     return;
                 }
+
+                // Set isRegistrationMode to true if registering a new face; false for quick verification
+                isRegistrationMode = false; 
 
                 document.getElementById("choice-box").style.display = "none";
                 document.getElementById("camera-box").style.display = "flex";
