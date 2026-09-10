@@ -3,7 +3,8 @@ import io
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify
 from pymongo import MongoClient
-from deepface import DeepFace
+import cv2
+import numpy as np
 from PIL import Image
 
 app = Flask(__name__)
@@ -73,44 +74,53 @@ def submit_attendance():
 
     return jsonify({"success": True, "message": "Saved to MongoDB Atlas successfully!"}), 200
 
-# Face Verification using DeepFace
+# Lightweight, Memory-Safe Face Verification
 @app.route("/api/auth/verify-face", methods=["POST"])
 def verify_face():
     if "live_photo" not in request.files:
         return jsonify({"success": False, "match": False, "message": "No photo provided"}), 400
 
     if not os.path.exists(REFERENCE_FACE_PATH):
-        return jsonify({"success": False, "match": False, "message": "Reference face image missing on server"}), 500
-
-    temp_live_path = "temp_live.jpg"
+        return jsonify({"success": False, "match": False, "message": "reference_face.jpg missing on server"}), 500
 
     try:
-        # Save live image temporarily
+        # Load reference image
+        ref_img = cv2.imread(REFERENCE_FACE_PATH, cv2.IMREAD_GRAYSCALE)
+        if ref_img is None:
+            return jsonify({"success": False, "match": False, "message": "Invalid reference image file"}), 500
+
+        # Load live image from uploaded stream
         file = request.files["live_photo"]
-        image = Image.open(io.BytesIO(file.read()))
-        image.save(temp_live_path)
+        live_bytes = np.frombuffer(file.read(), np.uint8)
+        live_img = cv2.imdecode(live_bytes, cv2.IMREAD_GRAYSCALE)
 
-        # Compare reference_face.jpg with live webcam photo
-        result = DeepFace.verify(
-            img1_path=REFERENCE_FACE_PATH,
-            img2_path=temp_live_path,
-            model_name="VGG-Face",
-            enforce_detection=True
-        )
+        if live_img is None:
+            return jsonify({"success": False, "match": False, "message": "Could not read camera frame"}), 400
 
-        # Cleanup temporary file
-        if os.path.exists(temp_live_path):
-            os.remove(temp_live_path)
+        # Initialize ORB detector
+        orb = cv2.ORB_create(nfeatures=1000)
+        kp1, des1 = orb.detectAndCompute(ref_img, None)
+        kp2, des2 = orb.detectAndCompute(live_img, None)
 
-        if result.get("verified") is True:
+        if des1 is None or des2 is None:
+            return jsonify({"success": False, "match": False, "message": "No clear facial features detected"}), 400
+
+        # Match keypoints between reference face and live photo
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        matches = bf.match(des1, des2)
+        matches = sorted(matches, key=lambda x: x.distance)
+
+        # Count good feature matches with low distance score
+        good_matches = [m for m in matches if m.distance < 50]
+
+        # Verify match threshold
+        if len(good_matches) >= 15:
             return jsonify({"success": True, "match": True, "message": "Face verified successfully"}), 200
         else:
             return jsonify({"success": False, "match": False, "message": "Access Denied: Unrecognized face"}), 401
 
     except Exception as e:
-        if os.path.exists(temp_live_path):
-            os.remove(temp_live_path)
-        return jsonify({"success": False, "match": False, "message": "No clear face detected in camera feed"}), 400
+        return jsonify({"success": False, "match": False, "message": f"Verification error: {str(e)}"}), 500
 
 # Calculate Historical Average Attendance
 @app.route("/api/attendance/average", methods=["GET"])
