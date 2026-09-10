@@ -1,7 +1,4 @@
-flask
-flask-cors
+Flask
 pymongo
-gunicorn
-Click
-Pillow
-numpy
+deepface
+tf-keras
