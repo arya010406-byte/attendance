@@ -73,7 +73,7 @@ def submit_attendance():
 
     return jsonify({"success": True, "message": "Saved to MongoDB Atlas successfully!"}), 200
 
-# Ultimate Reliable Face Verification
+# Direct Standard Image Verification
 @app.route("/api/auth/verify-face", methods=["POST"])
 def verify_face():
     if "live_photo" not in request.files:
@@ -83,42 +83,32 @@ def verify_face():
         return jsonify({"success": False, "match": False, "message": "reference_face.jpg missing on server"}), 500
 
     try:
-        # Load Reference Image
-        ref_img = cv2.imread(REFERENCE_FACE_PATH, cv2.IMREAD_GRAYSCALE)
+        # Read reference image directly
+        ref_img = cv2.imread(REFERENCE_FACE_PATH)
         if ref_img is None:
-            return jsonify({"success": False, "match": False, "message": "Failed to load reference image"}), 500
+            return jsonify({"success": False, "match": False, "message": "Could not read reference image"}), 500
 
-        # Load Live Camera Frame
+        # Read live incoming upload bytes
         file = request.files["live_photo"]
         live_bytes = np.frombuffer(file.read(), np.uint8)
-        live_img = cv2.imdecode(live_bytes, cv2.IMREAD_GRAYSCALE)
+        live_img = cv2.imdecode(live_bytes, cv2.IMREAD_COLOR)
 
         if live_img is None:
-            return jsonify({"success": False, "match": False, "message": "Invalid camera stream"}), 400
+            return jsonify({"success": False, "match": False, "message": "Could not decode uploaded photo"}), 400
 
-        # Crop central 60% of both images to strip room backgrounds/walls
-        def crop_center(img):
-            h, w = img.shape
-            ch, cw = int(h * 0.6), int(w * 0.6)
-            sy, sx = (h - ch) // 2, (w - cw) // 2
-            return cv2.resize(img[sy:sy+ch, sx:sx+cw], (128, 128))
+        # Resize both images to standard dimensions
+        ref_resized = cv2.resize(ref_img, (300, 300))
+        live_resized = cv2.resize(live_img, (300, 300))
 
-        ref_crop = crop_center(ref_img)
-        live_crop = crop_center(live_img)
+        # Basic image similarity via matchTemplate
+        result = cv2.matchTemplate(ref_resized, live_resized, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, _ = cv2.minMaxLoc(result)
 
-        # Equalize contrast/lighting
-        ref_norm = cv2.equalizeHist(ref_crop)
-        live_norm = cv2.equalizeHist(live_crop)
-
-        # Pearson Correlation Matrix Matching
-        res = cv2.matchTemplate(ref_norm, live_norm, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, _ = cv2.minMaxLoc(res)
-
-        # Verification threshold tuned for live webcams
-        if max_val >= 0.15:
+        # Standard check threshold
+        if max_val > 0.1:
             return jsonify({"success": True, "match": True, "message": "Face verified successfully"}), 200
         else:
-            return jsonify({"success": False, "match": False, "message": "Access Denied: Unrecognized face"}), 401
+            return jsonify({"success": False, "match": False, "message": "Access Denied: Image does not match"}), 401
 
     except Exception as e:
         return jsonify({"success": False, "match": False, "message": f"Verification error: {str(e)}"}), 500
