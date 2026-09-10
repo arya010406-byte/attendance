@@ -60,9 +60,9 @@
     /* Responsive Toast Notifications */
     #toast-container {
       position: fixed;
-      top: 20px;
-      right: 20px;
-      left: 20px;
+      top: 16px;
+      right: 16px;
+      left: 16px;
       z-index: 11000;
       display: flex;
       flex-direction: column;
@@ -123,9 +123,9 @@
     }
 
     .welcome-title {
-      font-size: clamp(1.5rem, 5vw, 2.5rem);
+      font-size: clamp(1.4rem, 5vw, 2.5rem);
       font-weight: 800;
-      letter-spacing: 2px;
+      letter-spacing: 1.5px;
       margin-top: 10px;
       background: linear-gradient(90deg, #f43f5e, #a855f7, #38bdf8, #10b981);
       background-size: 300% 300%;
@@ -156,29 +156,28 @@
     }
 
     header h1 {
-      font-size: clamp(1.4rem, 4vw, 2.2rem);
+      font-size: clamp(1.3rem, 4vw, 2.2rem);
       font-weight: 800;
       letter-spacing: 0.5px;
     }
 
     header p {
       color: var(--text-sub);
-      font-size: clamp(0.8rem, 2.5vw, 0.95rem);
+      font-size: clamp(0.78rem, 2.5vw, 0.95rem);
       margin-top: 4px;
       font-weight: 600;
     }
 
-    /* Main Responsive Container */
+    /* Responsive Main Container */
     .container {
       z-index: 1;
-      width: calc(100% - 24px);
-      max-width: 1100px;
+      width: clamp(300px, 94vw, 1100px);
       background: var(--card-bg);
       backdrop-filter: blur(25px);
       -webkit-backdrop-filter: blur(25px);
       border: 1px solid var(--card-border);
       border-radius: var(--radius-lg);
-      padding: clamp(16px, 4vw, 32px);
+      padding: clamp(14px, 3.5vw, 32px);
       box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
       margin-top: 8px;
       animation: containerRise 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -231,10 +230,10 @@
       gap: 12px;
     }
 
-    /* Responsive Grid Controls */
+    /* Responsive Controls Grid */
     .controls {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 14px;
       margin-bottom: 20px;
       background: rgba(255, 255, 255, 0.02);
@@ -304,9 +303,9 @@
     .stat-card.absent .value { color: var(--danger); }
     .stat-card.late .value { color: var(--warning); }
 
-    /* Attendance Table Area */
+    /* Table Container Styling */
     .table-wrapper {
-      max-height: 420px;
+      max-height: clamp(300px, 50vh, 480px);
       overflow-y: auto;
       overflow-x: auto;
       border-radius: var(--radius-md);
@@ -319,7 +318,7 @@
       width: 100%;
       border-collapse: separate;
       border-spacing: 0;
-      min-width: 320px;
+      min-width: 280px;
     }
 
     .attendance-table th {
@@ -342,7 +341,7 @@
     .attendance-table td {
       padding: 12px 14px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-      font-size: 0.88rem;
+      font-size: clamp(0.8rem, 2.5vw, 0.88rem);
       font-weight: 600;
     }
 
@@ -373,12 +372,12 @@
       padding: 4px 0;
     }
 
-    /* Touch-Optimized Radio Buttons */
+    /* Touch-Optimized Custom Radios */
     .status-radio {
       appearance: none;
       -webkit-appearance: none;
-      width: 28px;
-      height: 28px;
+      width: clamp(22px, 5vw, 28px);
+      height: clamp(22px, 5vw, 28px);
       border: 2px solid var(--card-border);
       border-radius: 50%;
       outline: none;
@@ -393,14 +392,14 @@
     .status-radio.absent:checked { background-color: var(--danger); border-color: var(--danger); box-shadow: 0 0 12px var(--danger); }
     .status-radio.late:checked { background-color: var(--warning); border-color: var(--warning); box-shadow: 0 0 12px var(--warning); }
 
-    /* Touch-friendly Buttons */
+    /* Action Buttons Area */
     .actions {
       margin-top: 20px;
       display: flex;
       flex-direction: row;
       justify-content: space-between;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
       flex-wrap: wrap;
     }
 
@@ -422,7 +421,7 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      min-height: 44px;
+      min-height: 46px;
     }
 
     .btn:active:not(:disabled) { transform: scale(0.97); }
@@ -433,7 +432,7 @@
     .btn-warning { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; box-shadow: 0 4px 15px var(--warning-glow); }
     .btn-auth { background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%); color: white; }
 
-    /* Modals Layout */
+    /* Modal Layout Overlays */
     .modal-overlay {
       position: fixed;
       inset: 0;
@@ -455,7 +454,7 @@
     .modal-card {
       background: rgba(15, 23, 42, 0.95);
       border-radius: var(--radius-lg);
-      padding: clamp(20px, 5vw, 32px);
+      padding: clamp(18px, 4vw, 32px);
       width: 100%;
       max-width: 500px;
       text-align: center;
@@ -549,8 +548,13 @@
     @keyframes logoPulse { 0% { transform: scale(1); } 100% { transform: scale(1.05); } }
     @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
 
-    /* Mobile Responsive Layout Fine-Tuning */
-    @media (max-width: 640px) {
+    /* Dynamic Mobile & Tablet Breakpoints */
+    @media (max-width: 768px) {
+      .controls {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+
       .auth-banner, .status-badge-banner {
         flex-direction: column;
         text-align: center;
@@ -573,28 +577,38 @@
       }
 
       .attendance-table th, .attendance-table td {
-        padding: 10px 8px;
+        padding: 10px 6px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .container {
+        padding: 12px;
+        width: calc(100vw - 16px);
+      }
+
+      .summary-bar {
+        gap: 6px;
+      }
+
+      .stat-card {
+        padding: 8px 4px;
       }
 
       .header-status-labels span {
         font-size: 0.65rem;
-      }
-
-      .status-radio {
-        width: 24px;
-        height: 24px;
       }
     }
   </style>
 </head>
 <body>
 
-  <!-- Particle Animation Canvas -->
+  <!-- Particle Animation Background Canvas -->
   <canvas id="bg-canvas"></canvas>
 
   <div id="toast-container"></div>
 
-  <!-- Splash / Welcome Screen -->
+  <!-- Splash / Welcome Overlay -->
   <div id="welcome-overlay">
     <div class="welcome-logo"><i class="fa-solid fa-graduation-cap"></i></div>
     <h1 class="welcome-title">ST. XAVIER'S HIGH SCHOOL</h1>
@@ -608,7 +622,7 @@
     <p><i class="fa-regular fa-calendar-check"></i> Digital Attendance Register</p>
   </header>
 
-  <!-- Main Workspace Card -->
+  <!-- Main Container -->
   <div class="container">
     <div class="auth-banner" id="auth-banner">
       <span id="auth-status-text"><i class="fa-solid fa-lock"></i> Portal Locked: Authentication required.</span>
@@ -642,14 +656,14 @@
         </div>
       </section>
 
-      <!-- Status Summary Cards -->
+      <!-- Metric Cards -->
       <section class="summary-bar">
         <div class="stat-card present"><div class="title">Present</div><div class="value" id="present-count">0</div></div>
         <div class="stat-card absent"><div class="title">Absent</div><div class="value" id="absent-count">0</div></div>
         <div class="stat-card late"><div class="title">Late</div><div class="value" id="late-count">0</div></div>
       </section>
 
-      <!-- Main Register Table -->
+      <!-- Table Viewport -->
       <main>
         <div class="table-wrapper">
           <table class="attendance-table">
@@ -682,7 +696,7 @@
     </div>
   </div>
 
-  <!-- AUTHENTICATION MODAL -->
+  <!-- Authentication Modal -->
   <div class="modal-overlay" id="auth-modal">
     <div class="modal-card">
       <h3 id="modal-title" style="font-size: 1.4rem; font-weight: 800; margin-bottom: 6px;">Unlock Portal</h3>
@@ -710,7 +724,7 @@
     </div>
   </div>
 
-  <!-- AVERAGE ATTENDANCE REPORT MODAL -->
+  <!-- Averages Report Modal -->
   <div class="modal-overlay" id="avg-modal">
     <div class="modal-card" style="max-width: 600px; text-align: left;">
       <h3 style="margin-bottom: 6px; text-align: center; font-size: 1.4rem; font-weight: 800;"><i class="fa-solid fa-calculator" style="color: var(--primary);"></i> Attendance Averages</h3>
@@ -744,7 +758,7 @@
   <canvas id="snapshot-canvas" width="400" height="300"></canvas>
 
   <script>
-    // Canvas Background Animation
+    // Canvas Particles
     const canvas = document.getElementById("bg-canvas");
     const ctx = canvas.getContext("2d");
     let particles = [];
@@ -788,7 +802,7 @@
     }
     animateParticles();
 
-    // Portal Logic
+    // Portal Script Logic
     let videoStream = null;
     let isEditMode = false;
     let fetchedRecord = null;
@@ -959,7 +973,7 @@
         }
       });
 
-      // Authentication Modal Logic
+      // Auth Logic
       const authModal = document.getElementById("auth-modal");
       document.getElementById("open-verify-btn").addEventListener("click", () => authModal.classList.add("active"));
       document.getElementById("close-modal-btn").addEventListener("click", () => { authModal.classList.remove("active"); stopCam(); });
@@ -1047,7 +1061,7 @@
         if (videoStream) videoStream.getTracks().forEach(track => track.stop());
       }
 
-      // Average Modal Logic
+      // Modal Handling
       const avgModal = document.getElementById("avg-modal");
       document.getElementById("open-avg-modal-btn").addEventListener("click", () => avgModal.classList.add("active"));
       document.getElementById("close-avg-modal-btn").addEventListener("click", () => avgModal.classList.remove("active"));
