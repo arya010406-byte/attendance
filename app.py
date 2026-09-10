@@ -5,7 +5,7 @@ from pymongo import MongoClient
 
 app = Flask(__name__)
 
-# Fetch MongoDB URI safely from environment variables
+# Fetch MongoDB URI safely from environment variable
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/attendance_db")
 client = MongoClient(MONGO_URI)
 db = client.get_database()
@@ -22,7 +22,7 @@ def get_students():
     students = [{"id": i, "name": f"Student {i}"} for i in range(1, TOTAL_STUDENTS + 1)]
     return jsonify(students)
 
-# Fetch saved attendance for a specific Class, Division, and Date
+# Fetch attendance for a specific Class, Division, and Date
 @app.route("/api/attendance/<className>/<division>/<date>", methods=["GET"])
 def get_attendance(className, division, date):
     record = attendance_collection.find_one({
@@ -35,7 +35,7 @@ def get_attendance(className, division, date):
         return jsonify({"success": True, "record": record}), 200
     return jsonify({"success": False, "message": "No record found"}), 404
 
-# Submit or update attendance (Mandatory 35 students validation)
+# Submit or update attendance with strict 35-student check
 @app.route("/api/attendance/submit", methods=["POST"])
 def submit_attendance():
     data = request.get_json() or {}
@@ -47,15 +47,14 @@ def submit_attendance():
     if not class_name or not division or not date:
         return jsonify({"success": False, "message": "Missing required fields."}), 400
 
-    # Reject submission if fewer than 35 students are marked
+    # Ensure all 35 students have explicit attendance values
     if len(records) < TOTAL_STUDENTS:
         missing_count = TOTAL_STUDENTS - len(records)
         return jsonify({
             "success": False, 
-            "message": f"Attendance incomplete! Please mark attendance for all {TOTAL_STUDENTS} students. ({missing_count} remaining)"
+            "message": f"Attendance incomplete! Please mark all {TOTAL_STUDENTS} students. ({missing_count} remaining)"
         }), 400
 
-    # Save to MongoDB Atlas
     attendance_entry = {
         "className": str(class_name),
         "division": str(division),
@@ -69,9 +68,9 @@ def submit_attendance():
         upsert=True
     )
 
-    return jsonify({"success": True, "message": "Attendance recorded successfully!"}), 200
+    return jsonify({"success": True, "message": "Saved to MongoDB Atlas successfully!"}), 200
 
-# Facial Scan Verification Route
+# Facial Verification Route
 @app.route("/api/auth/verify-face", methods=["POST"])
 def verify_face():
     if "live_photo" not in request.files:
