@@ -5,7 +5,6 @@ from flask import Flask, render_template, request, jsonify
 from pymongo import MongoClient
 import cv2
 import numpy as np
-from PIL import Image
 
 app = Flask(__name__)
 
@@ -27,7 +26,6 @@ def get_students():
     students = [{"id": i, "name": f"Student {i}"} for i in range(1, TOTAL_STUDENTS + 1)]
     return jsonify(students)
 
-# Fetch attendance for a specific Class, Division, and Date
 @app.route("/api/attendance/<className>/<division>/<date>", methods=["GET"])
 def get_attendance(className, division, date):
     record = attendance_collection.find_one({
@@ -40,7 +38,6 @@ def get_attendance(className, division, date):
         return jsonify({"success": True, "record": record}), 200
     return jsonify({"success": False, "message": "No record found"}), 404
 
-# Submit or update attendance with strict 35-student check
 @app.route("/api/attendance/submit", methods=["POST"])
 def submit_attendance():
     data = request.get_json() or {}
@@ -74,7 +71,7 @@ def submit_attendance():
 
     return jsonify({"success": True, "message": "Saved to MongoDB Atlas successfully!"}), 200
 
-# Strict Face Verification Route
+# Standalone Strict Pixel Structural Face Verification
 @app.route("/api/auth/verify-face", methods=["POST"])
 def verify_face():
     if "live_photo" not in request.files:
@@ -84,56 +81,38 @@ def verify_face():
         return jsonify({"success": False, "match": False, "message": "reference_face.jpg missing on server"}), 500
 
     try:
-        # Load OpenCV Haar Cascade face detector
-        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        face_cascade = cv2.CascadeClassifier(cascade_path)
-
-        # 1. Process Reference Image
-        ref_img = cv2.imread(REFERENCE_FACE_PATH)
+        # Load Reference Image
+        ref_img = cv2.imread(REFERENCE_FACE_PATH, cv2.IMREAD_GRAYSCALE)
         if ref_img is None:
-            return jsonify({"success": False, "match": False, "message": "Could not read reference_face.jpg"}), 500
+            return jsonify({"success": False, "match": False, "message": "Failed to load reference face"}), 500
 
-        ref_gray = cv2.cvtColor(ref_img, cv2.COLOR_BGR2GRAY)
-        ref_faces = face_cascade.detectMultiScale(ref_gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-
-        if len(ref_faces) == 0:
-            return jsonify({"success": False, "match": False, "message": "No face found in reference_face.jpg"}), 500
-
-        # Crop and normalize reference face
-        rx, ry, rw, rh = ref_faces[0]
-        ref_face_crop = ref_gray[ry:ry+rh, rx:rx+rw]
-        ref_face_crop = cv2.resize(ref_face_crop, (150, 150))
-
-        # 2. Process Live Uploaded Image
+        # Load Live Webcam Photo
         file = request.files["live_photo"]
         live_bytes = np.frombuffer(file.read(), np.uint8)
-        live_img = cv2.imdecode(live_bytes, cv2.IMREAD_COLOR)
+        live_img = cv2.imdecode(live_bytes, cv2.IMREAD_GRAYSCALE)
 
         if live_img is None:
-            return jsonify({"success": False, "match": False, "message": "Could not read camera frame"}), 400
+            return jsonify({"success": False, "match": False, "message": "Invalid camera frame"}), 400
 
-        live_gray = cv2.cvtColor(live_img, cv2.COLOR_BGR2GRAY)
-        live_faces = face_cascade.detectMultiScale(live_gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        # Standardize both frames to identical dimension matrix (200x200)
+        ref_resized = cv2.resize(ref_img, (200, 200))
+        live_resized = cv2.resize(live_img, (200, 200))
 
-        if len(live_faces) == 0:
-            return jsonify({"success": False, "match": False, "message": "No face detected in camera feed"}), 400
+        # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to balance lighting difference
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        ref_norm = clahe.apply(ref_resized)
+        live_norm = clahe.apply(live_resized)
 
-        # Crop and normalize live face
-        lx, ly, lw, lh = live_faces[0]
-        live_face_crop = live_gray[ly:ly+lh, lx:lx+lw]
-        live_face_crop = cv2.resize(live_face_crop, (150, 150))
+        # 1. Structural Similarity Correlation
+        res = cv2.matchTemplate(ref_norm, live_norm, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, _ = cv2.minMaxLoc(res)
 
-        # 3. Compare Facial Features
-        ref_hist = cv2.calcHist([ref_face_crop], [0], None, [256], [0, 256])
-        live_hist = cv2.calcHist([live_face_crop], [0], None, [256], [0, 256])
+        # 2. Pixel Mean Absolute Difference
+        diff = cv2.absdiff(ref_norm, live_norm)
+        mean_diff = np.mean(diff)
 
-        cv2.normalize(ref_hist, ref_hist, 0, 1, cv2.NORM_MINMAX)
-        cv2.normalize(live_hist, live_hist, 0, 1, cv2.NORM_MINMAX)
-
-        similarity = cv2.compareHist(ref_hist, live_hist, cv2.HISTCMP_CORREL)
-
-        # High similarity score required to pass (0.75+)
-        if similarity >= 0.75:
+        # Threshold rules: High structural correlation (>0.55) + Low average pixel variance (<65)
+        if max_val >= 0.55 and mean_diff < 65.0:
             return jsonify({"success": True, "match": True, "message": "Face verified successfully"}), 200
         else:
             return jsonify({"success": False, "match": False, "message": "Access Denied: Unrecognized face"}), 401
@@ -141,7 +120,6 @@ def verify_face():
     except Exception as e:
         return jsonify({"success": False, "match": False, "message": f"Verification error: {str(e)}"}), 500
 
-# Calculate Historical Average Attendance
 @app.route("/api/attendance/average", methods=["GET"])
 def get_attendance_average():
     class_name = request.args.get("class")
