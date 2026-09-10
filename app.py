@@ -73,7 +73,7 @@ def submit_attendance():
 
     return jsonify({"success": True, "message": "Saved to MongoDB Atlas successfully!"}), 200
 
-# Facial Feature Geometry Verification
+# Zero-Dependency NumPy Face Verification
 @app.route("/api/auth/verify-face", methods=["POST"])
 def verify_face():
     if "live_photo" not in request.files:
@@ -83,12 +83,12 @@ def verify_face():
         return jsonify({"success": False, "match": False, "message": "reference_face.jpg missing on server"}), 500
 
     try:
-        # Load Reference Image
+        # Load Reference Image in Grayscale
         ref_img = cv2.imread(REFERENCE_FACE_PATH, cv2.IMREAD_GRAYSCALE)
         if ref_img is None:
             return jsonify({"success": False, "match": False, "message": "Failed to load reference image"}), 500
 
-        # Load Live Camera Stream
+        # Load Live Camera Frame
         file = request.files["live_photo"]
         live_bytes = np.frombuffer(file.read(), np.uint8)
         live_img = cv2.imdecode(live_bytes, cv2.IMREAD_GRAYSCALE)
@@ -96,31 +96,26 @@ def verify_face():
         if live_img is None:
             return jsonify({"success": False, "match": False, "message": "Invalid camera stream"}), 400
 
-        # Resize both images for fast feature extraction
-        ref_resized = cv2.resize(ref_img, (128, 128))
-        live_resized = cv2.resize(live_img, (128, 128))
+        # Normalize resolution (100x100 grid)
+        ref_norm = cv2.resize(ref_img, (100, 100)).astype("float32")
+        live_norm = cv2.resize(live_img, (100, 100)).astype("float32")
 
-        # Initialize HOG Feature Extractor for facial contours
-        hog = cv2.HOGDescriptor(
-            _winSize=(128, 128),
-            _blockSize=(32, 32),
-            _blockStride=(16, 16),
-            _cellSize=(16, 16),
-            _nbins=9
-        )
+        # Normalize pixel values to 0.0 - 1.0 range
+        ref_norm /= 255.0
+        live_norm /= 255.0
 
-        ref_hog = hog.compute(ref_resized).flatten()
-        live_hog = hog.compute(live_resized).flatten()
+        # 1. Compute Mean Squared Error (MSE) between images
+        mse = np.mean((ref_norm - live_norm) ** 2)
 
-        # Calculate Cosine Similarity between face feature vectors
-        dot_product = np.dot(ref_hog, live_hog)
-        norm_ref = np.linalg.norm(ref_hog)
-        norm_live = np.linalg.norm(live_hog)
+        # 2. Compute Pearson Correlation Coefficient across matrices
+        ref_flat = ref_norm.flatten() - np.mean(ref_norm)
+        live_flat = live_norm.flatten() - np.mean(live_norm)
         
-        similarity = dot_product / (norm_ref * norm_live)
+        denom = np.sqrt(np.sum(ref_flat ** 2) * np.sum(live_flat ** 2))
+        correlation = np.sum(ref_flat * live_flat) / denom if denom != 0 else 0
 
-        # Threshold calibrated: >= 0.70 unlocks ONLY for you
-        if similarity >= 0.70:
+        # High correlation (>0.50) and low mean error (<0.12) required to pass
+        if correlation >= 0.50 and mse <= 0.12:
             return jsonify({"success": True, "match": True, "message": "Face verified successfully"}), 200
         else:
             return jsonify({"success": False, "match": False, "message": "Access Denied: Unrecognized face"}), 401
