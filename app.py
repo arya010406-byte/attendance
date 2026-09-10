@@ -74,7 +74,7 @@ def submit_attendance():
 
     return jsonify({"success": True, "message": "Saved to MongoDB Atlas successfully!"}), 200
 
-# Lightweight, Memory-Safe Face Verification
+# Strict Face Verification Route
 @app.route("/api/auth/verify-face", methods=["POST"])
 def verify_face():
     if "live_photo" not in request.files:
@@ -84,37 +84,56 @@ def verify_face():
         return jsonify({"success": False, "match": False, "message": "reference_face.jpg missing on server"}), 500
 
     try:
-        # Load reference image
-        ref_img = cv2.imread(REFERENCE_FACE_PATH, cv2.IMREAD_GRAYSCALE)
-        if ref_img is None:
-            return jsonify({"success": False, "match": False, "message": "Invalid reference image file"}), 500
+        # Load OpenCV Haar Cascade face detector
+        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        face_cascade = cv2.CascadeClassifier(cascade_path)
 
-        # Load live image from uploaded stream
+        # 1. Process Reference Image
+        ref_img = cv2.imread(REFERENCE_FACE_PATH)
+        if ref_img is None:
+            return jsonify({"success": False, "match": False, "message": "Could not read reference_face.jpg"}), 500
+
+        ref_gray = cv2.cvtColor(ref_img, cv2.COLOR_BGR2GRAY)
+        ref_faces = face_cascade.detectMultiScale(ref_gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+
+        if len(ref_faces) == 0:
+            return jsonify({"success": False, "match": False, "message": "No face found in reference_face.jpg"}), 500
+
+        # Crop and normalize reference face
+        rx, ry, rw, rh = ref_faces[0]
+        ref_face_crop = ref_gray[ry:ry+rh, rx:rx+rw]
+        ref_face_crop = cv2.resize(ref_face_crop, (150, 150))
+
+        # 2. Process Live Uploaded Image
         file = request.files["live_photo"]
         live_bytes = np.frombuffer(file.read(), np.uint8)
-        live_img = cv2.imdecode(live_bytes, cv2.IMREAD_GRAYSCALE)
+        live_img = cv2.imdecode(live_bytes, cv2.IMREAD_COLOR)
 
         if live_img is None:
             return jsonify({"success": False, "match": False, "message": "Could not read camera frame"}), 400
 
-        # Initialize ORB detector
-        orb = cv2.ORB_create(nfeatures=1000)
-        kp1, des1 = orb.detectAndCompute(ref_img, None)
-        kp2, des2 = orb.detectAndCompute(live_img, None)
+        live_gray = cv2.cvtColor(live_img, cv2.COLOR_BGR2GRAY)
+        live_faces = face_cascade.detectMultiScale(live_gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
 
-        if des1 is None or des2 is None:
-            return jsonify({"success": False, "match": False, "message": "No clear facial features detected"}), 400
+        if len(live_faces) == 0:
+            return jsonify({"success": False, "match": False, "message": "No face detected in camera feed"}), 400
 
-        # Match keypoints between reference face and live photo
-        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-        matches = bf.match(des1, des2)
-        matches = sorted(matches, key=lambda x: x.distance)
+        # Crop and normalize live face
+        lx, ly, lw, lh = live_faces[0]
+        live_face_crop = live_gray[ly:ly+lh, lx:lx+lw]
+        live_face_crop = cv2.resize(live_face_crop, (150, 150))
 
-        # Count good feature matches with low distance score
-        good_matches = [m for m in matches if m.distance < 50]
+        # 3. Compare Facial Features
+        ref_hist = cv2.calcHist([ref_face_crop], [0], None, [256], [0, 256])
+        live_hist = cv2.calcHist([live_face_crop], [0], None, [256], [0, 256])
 
-        # Verify match threshold
-        if len(good_matches) >= 15:
+        cv2.normalize(ref_hist, ref_hist, 0, 1, cv2.NORM_MINMAX)
+        cv2.normalize(live_hist, live_hist, 0, 1, cv2.NORM_MINMAX)
+
+        similarity = cv2.compareHist(ref_hist, live_hist, cv2.HISTCMP_CORREL)
+
+        # High similarity score required to pass (0.75+)
+        if similarity >= 0.75:
             return jsonify({"success": True, "match": True, "message": "Face verified successfully"}), 200
         else:
             return jsonify({"success": False, "match": False, "message": "Access Denied: Unrecognized face"}), 401
