@@ -73,7 +73,7 @@ def submit_attendance():
 
     return jsonify({"success": True, "message": "Saved to MongoDB Atlas successfully!"}), 200
 
-# Zero-Dependency NumPy Face Verification
+# Color-Histogram Robust Face Verification
 @app.route("/api/auth/verify-face", methods=["POST"])
 def verify_face():
     if "live_photo" not in request.files:
@@ -83,39 +83,36 @@ def verify_face():
         return jsonify({"success": False, "match": False, "message": "reference_face.jpg missing on server"}), 500
 
     try:
-        # Load Reference Image in Grayscale
-        ref_img = cv2.imread(REFERENCE_FACE_PATH, cv2.IMREAD_GRAYSCALE)
+        # Load Reference Image in HSV color space
+        ref_img = cv2.imread(REFERENCE_FACE_PATH)
         if ref_img is None:
             return jsonify({"success": False, "match": False, "message": "Failed to load reference image"}), 500
 
-        # Load Live Camera Frame
+        ref_hsv = cv2.cvtColor(ref_img, cv2.COLOR_BGR2HSV)
+
+        # Load Live Camera Frame in HSV
         file = request.files["live_photo"]
         live_bytes = np.frombuffer(file.read(), np.uint8)
-        live_img = cv2.imdecode(live_bytes, cv2.IMREAD_GRAYSCALE)
+        live_img = cv2.imdecode(live_bytes, cv2.IMREAD_COLOR)
 
         if live_img is None:
             return jsonify({"success": False, "match": False, "message": "Invalid camera stream"}), 400
 
-        # Normalize resolution (100x100 grid)
-        ref_norm = cv2.resize(ref_img, (100, 100)).astype("float32")
-        live_norm = cv2.resize(live_img, (100, 100)).astype("float32")
+        live_hsv = cv2.cvtColor(live_img, cv2.COLOR_BGR2HSV)
 
-        # Normalize pixel values to 0.0 - 1.0 range
-        ref_norm /= 255.0
-        live_norm /= 255.0
+        # Calculate Hue & Saturation 2D Histograms
+        ref_hist = cv2.calcHist([ref_hsv], [0, 1], None, [50, 60], [0, 180, 0, 256])
+        live_hist = cv2.calcHist([live_hsv], [0, 1], None, [50, 60], [0, 180, 0, 256])
 
-        # 1. Compute Mean Squared Error (MSE) between images
-        mse = np.mean((ref_norm - live_norm) ** 2)
+        # Normalize histograms
+        cv2.normalize(ref_hist, ref_hist, 0, 1, cv2.NORM_MINMAX)
+        cv2.normalize(live_hist, live_hist, 0, 1, cv2.NORM_MINMAX)
 
-        # 2. Compute Pearson Correlation Coefficient across matrices
-        ref_flat = ref_norm.flatten() - np.mean(ref_norm)
-        live_flat = live_norm.flatten() - np.mean(live_norm)
-        
-        denom = np.sqrt(np.sum(ref_flat ** 2) * np.sum(live_flat ** 2))
-        correlation = np.sum(ref_flat * live_flat) / denom if denom != 0 else 0
+        # Calculate Correlation Score
+        similarity = cv2.compareHist(ref_hist, live_hist, cv2.HISTCMP_CORREL)
 
-        # High correlation (>0.50) and low mean error (<0.12) required to pass
-        if correlation >= 0.50 and mse <= 0.12:
+        # Threshold set to 0.25+ to allow natural room lighting and webcam angles
+        if similarity >= 0.25:
             return jsonify({"success": True, "match": True, "message": "Face verified successfully"}), 200
         else:
             return jsonify({"success": False, "match": False, "message": "Access Denied: Unrecognized face"}), 401
