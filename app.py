@@ -3,8 +3,8 @@ import io
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify
 from pymongo import MongoClient
-import cv2
 import numpy as np
+import face_recognition
 
 app = Flask(__name__)
 
@@ -17,12 +17,44 @@ attendance_collection = db["attendance"]
 TOTAL_STUDENTS = 35
 REFERENCE_FACE_PATH = "reference_face.jpg"
 
-# Minimum normalized cross-correlation score required to accept a match.
-# TM_CCOEFF_NORMED ranges from -1 to 1 (1.0 = perfect match).
-# Tune this against real test photos: raise it if impostors are getting
-# through, lower it slightly if the legitimate user is being rejected
-# too often due to lighting/angle changes.
-MATCH_THRESHOLD = 0.10
+# face_recognition compares faces using Euclidean distance between 128-d
+# embeddings. LOWER distance = more similar. 0.6 is the library's own
+# general-purpose default; 0.45-0.5 is stricter and recommended here since
+# this gates access rather than just tagging photos. Tune down further
+# (e.g. 0.40) if a look-alike or photo of a photo is getting through;
+# tune up slightly (e.g. 0.50) if the real user is being rejected too often.
+MATCH_DISTANCE_THRESHOLD = 0.45
+
+# Load and encode the reference face once at startup instead of on every
+# request. If this fails, the app should not silently allow logins, so we
+# fail loudly here.
+REFERENCE_ENCODING = None
+
+
+def _load_reference_encoding():
+    if not os.path.exists(REFERENCE_FACE_PATH):
+        raise RuntimeError(
+            f"Reference face not found at '{REFERENCE_FACE_PATH}'. Run rgt.py to register one."
+        )
+    ref_img = face_recognition.load_image_file(REFERENCE_FACE_PATH)
+    encodings = face_recognition.face_encodings(ref_img)
+    if not encodings:
+        raise RuntimeError(
+            "No face detected in the reference image. Re-capture reference_face.jpg "
+            "with a clear, front-facing, well-lit photo."
+        )
+    if len(encodings) > 1:
+        raise RuntimeError(
+            "Multiple faces detected in the reference image. It must contain exactly one face."
+        )
+    return encodings[0]
+
+
+try:
+    REFERENCE_ENCODING = _load_reference_encoding()
+except RuntimeError as e:
+    # Don't crash import (so /api/students etc. still work), but log clearly.
+    print(f"[verify-face] WARNING: {e}")
 
 
 @app.route("/")
@@ -85,65 +117,62 @@ def submit_attendance():
     return jsonify({"success": True, "message": "Saved to MongoDB Atlas successfully!"}), 200
 
 
-def _crop_face_region(img):
-    """Crop the center 70% of the image and resize to a fixed size
-    so the two images being compared are aligned and scale-independent."""
-    h, w = img.shape
-    ch, cw = int(h * 0.7), int(w * 0.7)
-    sy, sx = (h - ch) // 2, (w - cw) // 2
-    return cv2.resize(img[sy:sy + ch, sx:sx + cw], (128, 128))
-
-
 # Face Verification Route
 @app.route("/api/auth/verify-face", methods=["POST"])
 def verify_face():
     if "live_photo" not in request.files:
         return jsonify({"success": False, "match": False, "message": "No photo provided"}), 400
 
+    # No reference on file / couldn't be encoded -> hard failure, never a silent pass.
+    if REFERENCE_ENCODING is None:
+        try:
+            reference_encoding = _load_reference_encoding()
+        except RuntimeError as e:
+            return jsonify({"success": False, "match": False, "message": str(e)}), 500
+    else:
+        reference_encoding = REFERENCE_ENCODING
+
     try:
-        # Read incoming webcam payload
         file = request.files["live_photo"]
-        live_bytes = np.frombuffer(file.read(), np.uint8)
-        live_img = cv2.imdecode(live_bytes, cv2.IMREAD_GRAYSCALE)
+        live_bytes = file.read()
 
-        if live_img is None or live_img.size == 0:
+        # face_recognition wants a numpy RGB image array
+        live_array = np.frombuffer(live_bytes, np.uint8)
+        import cv2  # local import kept minimal; only used for decoding the upload
+        live_bgr = cv2.imdecode(live_array, cv2.IMREAD_COLOR)
+        if live_bgr is None or live_bgr.size == 0:
             return jsonify({"success": False, "match": False, "message": "Invalid camera feed"}), 400
+        live_rgb = cv2.cvtColor(live_bgr, cv2.COLOR_BGR2RGB)
 
-        # Reference image must exist and be readable — no reference means
-        # we cannot verify, so this is a hard failure, not a silent pass.
-        if not os.path.exists(REFERENCE_FACE_PATH):
-            return jsonify({
-                "success": False,
-                "match": False,
-                "message": "No reference face on file. Run rgt.py to register one."
-            }), 500
-
-        ref_img = cv2.imread(REFERENCE_FACE_PATH, cv2.IMREAD_GRAYSCALE)
-        if ref_img is None:
-            return jsonify({
-                "success": False,
-                "match": False,
-                "message": "Reference image could not be read"
-            }), 500
-
-        ref_crop = cv2.equalizeHist(_crop_face_region(ref_img))
-        live_crop = cv2.equalizeHist(_crop_face_region(live_img))
-
-        # Normalized Template Match
-        res = cv2.matchTemplate(ref_crop, live_crop, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, _ = cv2.minMaxLoc(res)
-
-        if max_val >= MATCH_THRESHOLD:
+        live_face_locations = face_recognition.face_locations(live_rgb)
+        if not live_face_locations:
             return jsonify({
                 "success": True,
-                "match": True,
-                "message": f"Face verified successfully (score={max_val:.2f})"
+                "match": False,
+                "message": "No face detected in the photo. Center your face and ensure good lighting."
             }), 200
+
+        if len(live_face_locations) > 1:
+            return jsonify({
+                "success": True,
+                "match": False,
+                "message": "Multiple faces detected. Only one person should be in frame."
+            }), 200
+
+        live_encodings = face_recognition.face_encodings(live_rgb, known_face_locations=live_face_locations)
+        live_encoding = live_encodings[0]
+
+        distance = face_recognition.face_distance([reference_encoding], live_encoding)[0]
+        is_match = bool(distance <= MATCH_DISTANCE_THRESHOLD)
 
         return jsonify({
             "success": True,
-            "match": False,
-            "message": f"Face does not match reference (score={max_val:.2f})"
+            "match": is_match,
+            "message": (
+                f"Face verified successfully (distance={distance:.3f})"
+                if is_match else
+                f"Face does not match reference (distance={distance:.3f})"
+            )
         }), 200
 
     except Exception as e:
