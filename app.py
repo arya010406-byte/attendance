@@ -73,7 +73,7 @@ def submit_attendance():
 
     return jsonify({"success": True, "message": "Saved to MongoDB Atlas successfully!"}), 200
 
-# Direct Standard Image Verification
+# Strict Single-User Face Verification
 @app.route("/api/auth/verify-face", methods=["POST"])
 def verify_face():
     if "live_photo" not in request.files:
@@ -83,32 +83,35 @@ def verify_face():
         return jsonify({"success": False, "match": False, "message": "reference_face.jpg missing on server"}), 500
 
     try:
-        # Read reference image directly
-        ref_img = cv2.imread(REFERENCE_FACE_PATH)
+        # Load reference face image in grayscale
+        ref_img = cv2.imread(REFERENCE_FACE_PATH, cv2.IMREAD_GRAYSCALE)
         if ref_img is None:
             return jsonify({"success": False, "match": False, "message": "Could not read reference image"}), 500
 
-        # Read live incoming upload bytes
+        # Load incoming webcam photo in grayscale
         file = request.files["live_photo"]
         live_bytes = np.frombuffer(file.read(), np.uint8)
-        live_img = cv2.imdecode(live_bytes, cv2.IMREAD_COLOR)
+        live_img = cv2.imdecode(live_bytes, cv2.IMREAD_GRAYSCALE)
 
         if live_img is None:
-            return jsonify({"success": False, "match": False, "message": "Could not decode uploaded photo"}), 400
+            return jsonify({"success": False, "match": False, "message": "Could not decode live camera photo"}), 400
 
-        # Resize both images to standard dimensions
-        ref_resized = cv2.resize(ref_img, (300, 300))
-        live_resized = cv2.resize(live_img, (300, 300))
+        # Resize both to identical 250x250 matrices
+        ref_resized = cv2.resize(ref_img, (250, 250))
+        live_resized = cv2.resize(live_img, (250, 250))
 
-        # Basic image similarity via matchTemplate
+        # 1. Structural Correlation Score
         result = cv2.matchTemplate(ref_resized, live_resized, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, _ = cv2.minMaxLoc(result)
 
-        # Standard check threshold
-        if max_val > 0.1:
+        # 2. Mean Absolute Difference Check
+        pixel_diff = np.mean(np.abs(ref_resized.astype("float") - live_resized.astype("float")))
+
+        # Tightened constraints: max_val >= 0.78 and pixel_diff <= 45.0
+        if max_val >= 0.78 and pixel_diff <= 45.0:
             return jsonify({"success": True, "match": True, "message": "Face verified successfully"}), 200
         else:
-            return jsonify({"success": False, "match": False, "message": "Access Denied: Image does not match"}), 401
+            return jsonify({"success": False, "match": False, "message": "Access Denied: Unrecognized face"}), 401
 
     except Exception as e:
         return jsonify({"success": False, "match": False, "message": f"Verification error: {str(e)}"}), 500
