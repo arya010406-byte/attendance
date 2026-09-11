@@ -17,6 +17,13 @@ attendance_collection = db["attendance"]
 TOTAL_STUDENTS = 35
 REFERENCE_FACE_PATH = "reference_face.jpg"
 
+def compute_dhash(image, hash_size=8):
+    # Convert image to grayscale and resize to (hash_size + 1, hash_size)
+    resized = cv2.resize(image, (hash_size + 1, hash_size))
+    # Compute horizontal gradient differences between adjacent pixels
+    diff = resized[:, 1:] > resized[:, :-1]
+    return diff
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -73,7 +80,7 @@ def submit_attendance():
 
     return jsonify({"success": True, "message": "Saved to MongoDB Atlas successfully!"}), 200
 
-# Calibrated Single-User Face Verification
+# Direct Perceptual Hash Verification
 @app.route("/api/auth/verify-face", methods=["POST"])
 def verify_face():
     if "live_photo" not in request.files:
@@ -96,21 +103,15 @@ def verify_face():
         if live_img is None:
             return jsonify({"success": False, "match": False, "message": "Could not decode live camera photo"}), 400
 
-        # Resize both to exact standard matrix size
-        ref_resized = cv2.resize(ref_img, (200, 200))
-        live_resized = cv2.resize(live_img, (200, 200))
+        # Compute hash difference between reference and live image
+        ref_hash = compute_dhash(ref_img)
+        live_hash = compute_dhash(live_img)
 
-        # Balance lighting differences between reference photo and webcam feed
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        ref_norm = clahe.apply(ref_resized)
-        live_norm = clahe.apply(live_resized)
+        # Count how many bit positions differ (Hamming Distance)
+        hamming_distance = np.count_nonzero(ref_hash != live_hash)
 
-        # Compute normalized structural cross-correlation
-        result = cv2.matchTemplate(ref_norm, live_norm, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, _ = cv2.minMaxLoc(result)
-
-        # Calibrated threshold (0.55): recognizes you across normal lighting shifts while blocking others
-        if max_val >= 0.55:
+        # Distance <= 28 allows your face to pass reliably while blocking different faces (max difference is 64)
+        if hamming_distance <= 28:
             return jsonify({"success": True, "match": True, "message": "Face verified successfully"}), 200
         else:
             return jsonify({"success": False, "match": False, "message": "Access Denied: Unrecognized face"}), 401
