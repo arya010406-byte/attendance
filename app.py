@@ -17,14 +17,24 @@ attendance_collection = db["attendance"]
 TOTAL_STUDENTS = 35
 REFERENCE_FACE_PATH = "reference_face.jpg"
 
+# Minimum normalized cross-correlation score required to accept a match.
+# TM_CCOEFF_NORMED ranges from -1 to 1 (1.0 = perfect match).
+# Tune this against real test photos: raise it if impostors are getting
+# through, lower it slightly if the legitimate user is being rejected
+# too often due to lighting/angle changes.
+MATCH_THRESHOLD = 0.55
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
+
 
 @app.route("/api/students", methods=["GET"])
 def get_students():
     students = [{"id": i, "name": f"Student {i}"} for i in range(1, TOTAL_STUDENTS + 1)]
     return jsonify(students)
+
 
 # Fetch attendance for a specific Class, Division, and Date
 @app.route("/api/attendance/<className>/<division>/<date>", methods=["GET"])
@@ -38,6 +48,7 @@ def get_attendance(className, division, date):
     if record:
         return jsonify({"success": True, "record": record}), 200
     return jsonify({"success": False, "message": "No record found"}), 404
+
 
 # Submit or update attendance with strict 35-student check
 @app.route("/api/attendance/submit", methods=["POST"])
@@ -54,7 +65,7 @@ def submit_attendance():
     if len(records) < TOTAL_STUDENTS:
         missing_count = TOTAL_STUDENTS - len(records)
         return jsonify({
-            "success": False, 
+            "success": False,
             "message": f"Attendance incomplete! Please mark all {TOTAL_STUDENTS} students. ({missing_count} remaining)"
         }), 400
 
@@ -73,7 +84,17 @@ def submit_attendance():
 
     return jsonify({"success": True, "message": "Saved to MongoDB Atlas successfully!"}), 200
 
-# Ultimate Fail-Safe Face Verification Route
+
+def _crop_face_region(img):
+    """Crop the center 70% of the image and resize to a fixed size
+    so the two images being compared are aligned and scale-independent."""
+    h, w = img.shape
+    ch, cw = int(h * 0.7), int(w * 0.7)
+    sy, sx = (h - ch) // 2, (w - cw) // 2
+    return cv2.resize(img[sy:sy + ch, sx:sx + cw], (128, 128))
+
+
+# Face Verification Route
 @app.route("/api/auth/verify-face", methods=["POST"])
 def verify_face():
     if "live_photo" not in request.files:
@@ -88,33 +109,46 @@ def verify_face():
         if live_img is None or live_img.size == 0:
             return jsonify({"success": False, "match": False, "message": "Invalid camera feed"}), 400
 
-        # Primary Reference Check (if available)
-        if os.path.exists(REFERENCE_FACE_PATH):
-            ref_img = cv2.imread(REFERENCE_FACE_PATH, cv2.IMREAD_GRAYSCALE)
-            if ref_img is not None:
-                # Crop center region to strip background noise
-                def crop_face_region(img):
-                    h, w = img.shape
-                    ch, cw = int(h * 0.7), int(w * 0.7)
-                    sy, sx = (h - ch) // 2, (w - cw) // 2
-                    return cv2.resize(img[sy:sy+ch, sx:sx+cw], (128, 128))
+        # Reference image must exist and be readable — no reference means
+        # we cannot verify, so this is a hard failure, not a silent pass.
+        if not os.path.exists(REFERENCE_FACE_PATH):
+            return jsonify({
+                "success": False,
+                "match": False,
+                "message": "No reference face on file. Run rgt.py to register one."
+            }), 500
 
-                ref_crop = cv2.equalizeHist(crop_face_region(ref_img))
-                live_crop = cv2.equalizeHist(crop_face_region(live_img))
+        ref_img = cv2.imread(REFERENCE_FACE_PATH, cv2.IMREAD_GRAYSCALE)
+        if ref_img is None:
+            return jsonify({
+                "success": False,
+                "match": False,
+                "message": "Reference image could not be read"
+            }), 500
 
-                # Normalized Template Match
-                res = cv2.matchTemplate(ref_crop, live_crop, cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, _ = cv2.minMaxLoc(res)
+        ref_crop = cv2.equalizeHist(_crop_face_region(ref_img))
+        live_crop = cv2.equalizeHist(_crop_face_region(live_img))
 
-                # Low-threshold structural match or valid presence fallback
-                if max_val >= 0.05 or np.std(live_crop) > 10:
-                    return jsonify({"success": True, "match": True, "message": "Face verified successfully"}), 200
+        # Normalized Template Match
+        res = cv2.matchTemplate(ref_crop, live_crop, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, _ = cv2.minMaxLoc(res)
 
-        # Fail-safe pass if photo presence verified
-        return jsonify({"success": True, "match": True, "message": "Face verified successfully"}), 200
+        if max_val >= MATCH_THRESHOLD:
+            return jsonify({
+                "success": True,
+                "match": True,
+                "message": f"Face verified successfully (score={max_val:.2f})"
+            }), 200
+
+        return jsonify({
+            "success": True,
+            "match": False,
+            "message": f"Face does not match reference (score={max_val:.2f})"
+        }), 200
 
     except Exception as e:
         return jsonify({"success": False, "match": False, "message": f"Verification error: {str(e)}"}), 500
+
 
 # Calculate Historical Average Attendance
 @app.route("/api/attendance/average", methods=["GET"])
@@ -165,6 +199,7 @@ def get_attendance_average():
         "daysCount": days_count,
         "averages": averages
     }), 200
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
