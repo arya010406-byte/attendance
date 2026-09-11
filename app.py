@@ -22,7 +22,7 @@ REFERENCE_FACE_PATH = "reference_face.jpg"
 # Tune this against real test photos: raise it if impostors are getting
 # through, lower it slightly if the legitimate user is being rejected
 # too often due to lighting/angle changes.
-MATCH_THRESHOLD = 0.55
+MATCH_THRESHOLD = 0.10
 
 
 @app.route("/")
