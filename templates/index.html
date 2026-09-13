@@ -136,6 +136,12 @@
             border: 1px solid rgba(56, 189, 248, 0.3); color: #7dd3fc; padding: 16px 24px; border-radius: 20px; margin-bottom: 28px; font-weight: 700; justify-content: space-between; align-items: center; gap: 14px;
         }
 
+        .holiday-banner { 
+            display: none; background: linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(15, 23, 42, 0.6) 100%); 
+            border: 1px solid rgba(245, 158, 11, 0.35); color: #fcd34d; padding: 18px 26px; border-radius: 20px; margin-bottom: 28px; font-weight: 700; justify-content: center; align-items: center; gap: 14px; text-align: center;
+            box-shadow: 0 10px 25px rgba(245, 158, 11, 0.15);
+        }
+
         /* Control Inputs Grid */
         .controls { 
             display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; 
@@ -261,7 +267,7 @@
         /* Responsiveness Media Queries */
         @media (max-width: 768px) {
             .container { padding: 24px 18px; width: 95%; }
-            .auth-banner, .status-badge-banner { flex-direction: column; text-align: center; }
+            .auth-banner, .status-badge-banner, .holiday-banner { flex-direction: column; text-align: center; }
             .auth-banner button, .status-badge-banner button { width: 100%; }
             .actions { flex-direction: column; align-items: stretch; }
             .action-btns-right { flex-direction: column; width: 100%; gap: 12px; }
@@ -317,6 +323,10 @@
             <div class="status-badge-banner" id="status-badge-banner">
                 <span><i class="fa-solid fa-circle-check"></i> Attendance saved in MongoDB Atlas.</span>
                 <button class="btn btn-warning" id="update-toggle-btn"><i class="fa-solid fa-pen-to-square"></i> Update Attendance</button>
+            </div>
+
+            <div class="holiday-banner" id="holiday-banner">
+                <span id="holiday-banner-text"><i class="fa-solid fa-champagne-glasses"></i> Holiday</span>
             </div>
 
             <!-- Options Grid -->
@@ -516,6 +526,41 @@
             return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         }
 
+        // Fixed national holidays that repeat every year — key is "MM-DD".
+        const NATIONAL_HOLIDAYS = {
+            "01-26": "Republic Day",
+            "08-15": "Independence Day",
+            "10-02": "Gandhi Jayanti"
+        };
+
+        // Festival / other holidays that move every year — add the exact
+        // date (YYYY-MM-DD) each year, e.g. "2026-11-08": "Diwali".
+        const FESTIVAL_HOLIDAYS = {
+            // "2026-11-08": "Diwali",
+            // "2026-03-04": "Holi",
+        };
+
+        // Returns the holiday name/reason for a date, or null if it's a working day.
+        function checkHoliday(dateStr) {
+            if (!dateStr) return null;
+
+            if (FESTIVAL_HOLIDAYS[dateStr]) {
+                return FESTIVAL_HOLIDAYS[dateStr];
+            }
+
+            const [, month, day] = dateStr.split("-");
+            if (NATIONAL_HOLIDAYS[`${month}-${day}`]) {
+                return NATIONAL_HOLIDAYS[`${month}-${day}`];
+            }
+
+            const dayOfWeek = new Date(`${dateStr}T00:00:00`).getDay();
+            if (dayOfWeek === 0) {
+                return "Sunday";
+            }
+
+            return null;
+        }
+
         document.addEventListener("DOMContentLoaded", () => {
             const classSelect = document.getElementById("class-select");
             const divisionSelect = document.getElementById("division-select");
@@ -525,6 +570,8 @@
             const markAllPresentBtn = document.getElementById("mark-all-present");
             const statusBadgeBanner = document.getElementById("status-badge-banner");
             const updateToggleBtn = document.getElementById("update-toggle-btn");
+            const holidayBanner = document.getElementById("holiday-banner");
+            const holidayBannerText = document.getElementById("holiday-banner-text");
 
             const todayStr = getTodayDateString();
             dateInput.max = todayStr;
@@ -539,15 +586,26 @@
                 studentList.innerHTML = "";
                 const selectedClass = classSelect.value || 1;
                 const selectedDiv = divisionSelect.value || "A";
+                const holidayReason = checkHoliday(dateInput.value);
 
-                if (fetchedRecord && !isEditMode) {
-                    statusBadgeBanner.style.display = "flex";
+                if (holidayReason) {
+                    holidayBanner.style.display = "flex";
+                    holidayBannerText.innerHTML = `<i class="fa-solid fa-champagne-glasses"></i> Holiday: ${holidayReason}. Attendance is not required.`;
+                    statusBadgeBanner.style.display = "none";
                     submitBtn.disabled = true;
                     markAllPresentBtn.disabled = true;
                 } else {
-                    statusBadgeBanner.style.display = "none";
-                    submitBtn.disabled = false;
-                    markAllPresentBtn.disabled = false;
+                    holidayBanner.style.display = "none";
+
+                    if (fetchedRecord && !isEditMode) {
+                        statusBadgeBanner.style.display = "flex";
+                        submitBtn.disabled = true;
+                        markAllPresentBtn.disabled = true;
+                    } else {
+                        statusBadgeBanner.style.display = "none";
+                        submitBtn.disabled = false;
+                        markAllPresentBtn.disabled = false;
+                    }
                 }
 
                 const fragment = document.createDocumentFragment();
@@ -556,7 +614,7 @@
                     const tr = document.createElement("tr");
                     const name = getRandomName(rollNo, selectedClass, selectedDiv);
                     const savedStatus = fetchedRecord ? fetchedRecord[rollNo] : null;
-                    const isDisabled = fetchedRecord && !isEditMode;
+                    const isDisabled = holidayReason ? true : (fetchedRecord && !isEditMode);
 
                     tr.innerHTML = `
                         <td><strong>${rollNo}</strong></td>
@@ -615,6 +673,12 @@
                 const selectedClass = classSelect.value;
                 const selectedDiv = divisionSelect.value;
                 const date = dateInput.value;
+
+                const holidayReason = checkHoliday(date);
+                if (holidayReason) {
+                    showToast(`Cannot submit attendance: ${holidayReason} is a holiday.`, "warning");
+                    return;
+                }
 
                 const attendanceRecord = {};
                 let selectedCount = 0;
