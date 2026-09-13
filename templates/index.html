@@ -118,7 +118,7 @@
         }
         .portal-locked { pointer-events: none; opacity: 0.25; filter: blur(5px); transition: all 0.5s ease; }
 
-        /* Lock / Unlock Banners */
+        /* Lock / Unlock / Holiday Banners */
         .auth-banner { 
             background: linear-gradient(135deg, rgba(244, 63, 94, 0.15) 0%, rgba(15, 23, 42, 0.6) 100%); 
             border: 1px solid rgba(244, 63, 94, 0.3); color: #fda4af; padding: 18px 26px; border-radius: 20px; 
@@ -134,6 +134,11 @@
         .status-badge-banner { 
             display: none; background: linear-gradient(135deg, rgba(2, 132, 199, 0.15) 0%, rgba(15, 23, 42, 0.6) 100%); 
             border: 1px solid rgba(56, 189, 248, 0.3); color: #7dd3fc; padding: 16px 24px; border-radius: 20px; margin-bottom: 28px; font-weight: 700; justify-content: space-between; align-items: center; gap: 14px;
+        }
+
+        .holiday-banner {
+            display: none; background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(15, 23, 42, 0.6) 100%);
+            border: 1px solid rgba(245, 158, 11, 0.4); color: #fde047; padding: 16px 24px; border-radius: 20px; margin-bottom: 28px; font-weight: 700; text-align: center; align-items: center; justify-content: center; gap: 10px; font-size: 1.1rem;
         }
 
         /* Control Inputs Grid */
@@ -191,6 +196,10 @@
         .status-radio.present:checked { background-color: var(--success); border-color: var(--success); box-shadow: 0 0 20px var(--success); animation: radioPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         .status-radio.absent:checked { background-color: var(--danger); border-color: var(--danger); box-shadow: 0 0 20px var(--danger); animation: radioPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         .status-radio.late:checked { background-color: var(--warning); border-color: var(--warning); box-shadow: 0 0 20px var(--warning); animation: radioPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+        .holiday-badge {
+            color: var(--warning); font-weight: 800; letter-spacing: 1px; text-transform: uppercase; text-align: center; width: 100%; display: block;
+        }
 
         /* Animated Action Buttons */
         .actions { margin-top: 32px; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
@@ -261,7 +270,7 @@
         /* Responsiveness Media Queries */
         @media (max-width: 768px) {
             .container { padding: 24px 18px; width: 95%; }
-            .auth-banner, .status-badge-banner { flex-direction: column; text-align: center; }
+            .auth-banner, .status-badge-banner, .holiday-banner { flex-direction: column; text-align: center; }
             .auth-banner button, .status-badge-banner button { width: 100%; }
             .actions { flex-direction: column; align-items: stretch; }
             .action-btns-right { flex-direction: column; width: 100%; gap: 12px; }
@@ -319,6 +328,10 @@
                 <button class="btn btn-warning" id="update-toggle-btn"><i class="fa-solid fa-pen-to-square"></i> Update Attendance</button>
             </div>
 
+            <div class="holiday-banner" id="holiday-banner">
+                <i class="fa-solid fa-umbrella-beach"></i> <span>SUNDAY HOLIDAY - School is closed.</span>
+            </div>
+
             <!-- Options Grid -->
             <section class="controls">
                 <div class="control-group">
@@ -356,7 +369,7 @@
                                 <th style="width: 15%;">Roll No</th>
                                 <th style="width: 45%;">Student Name</th>
                                 <th style="width: 40%;">
-                                    <div class="header-status-labels">
+                                    <div class="header-status-labels" id="table-header-labels">
                                         <span class="p-lbl"><i class="fa-solid fa-circle"></i> Present</span>
                                         <span class="a-lbl"><i class="fa-solid fa-circle"></i> Absent</span>
                                         <span class="l-lbl"><i class="fa-solid fa-circle"></i> Late</span>
@@ -516,6 +529,13 @@
             return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         }
 
+        function isSunday(dateString) {
+            if (!dateString) return false;
+            const parts = dateString.split('-');
+            const date = new Date(parts[0], parts[1] - 1, parts[2]);
+            return date.getDay() === 0;
+        }
+
         document.addEventListener("DOMContentLoaded", () => {
             const classSelect = document.getElementById("class-select");
             const divisionSelect = document.getElementById("division-select");
@@ -524,6 +544,7 @@
             const submitBtn = document.getElementById("submit-btn");
             const markAllPresentBtn = document.getElementById("mark-all-present");
             const statusBadgeBanner = document.getElementById("status-badge-banner");
+            const holidayBanner = document.getElementById("holiday-banner");
             const updateToggleBtn = document.getElementById("update-toggle-btn");
 
             const todayStr = getTodayDateString();
@@ -539,15 +560,26 @@
                 studentList.innerHTML = "";
                 const selectedClass = classSelect.value || 1;
                 const selectedDiv = divisionSelect.value || "A";
+                const selectedDate = dateInput.value;
+                const sunday = isSunday(selectedDate);
 
-                if (fetchedRecord && !isEditMode) {
-                    statusBadgeBanner.style.display = "flex";
+                if (sunday) {
+                    holidayBanner.style.display = "flex";
+                    statusBadgeBanner.style.display = "none";
                     submitBtn.disabled = true;
                     markAllPresentBtn.disabled = true;
+                    showToast("Selected date is Sunday (Holiday). Portal is read-only.", "warning");
                 } else {
-                    statusBadgeBanner.style.display = "none";
-                    submitBtn.disabled = false;
-                    markAllPresentBtn.disabled = false;
+                    holidayBanner.style.display = "none";
+                    if (fetchedRecord && !isEditMode) {
+                        statusBadgeBanner.style.display = "flex";
+                        submitBtn.disabled = true;
+                        markAllPresentBtn.disabled = true;
+                    } else {
+                        statusBadgeBanner.style.display = "none";
+                        submitBtn.disabled = false;
+                        markAllPresentBtn.disabled = false;
+                    }
                 }
 
                 const fragment = document.createDocumentFragment();
@@ -556,18 +588,22 @@
                     const tr = document.createElement("tr");
                     const name = getRandomName(rollNo, selectedClass, selectedDiv);
                     const savedStatus = fetchedRecord ? fetchedRecord[rollNo] : null;
-                    const isDisabled = fetchedRecord && !isEditMode;
+                    const isDisabled = sunday || (fetchedRecord && !isEditMode);
+
+                    const statusCellHtml = sunday ? `
+                        <span class="holiday-badge"><i class="fa-solid fa-mug-hot"></i> Holiday (Sunday)</span>
+                    ` : `
+                        <div class="status-grid">
+                            <div class="status-radio-cell"><input type="radio" class="status-radio present" name="status-${rollNo}" value="Present" ${savedStatus === 'Present' ? 'checked' : ''} ${isDisabled ? 'disabled' : ''} onchange="updateSummary()"></div>
+                            <div class="status-radio-cell"><input type="radio" class="status-radio absent" name="status-${rollNo}" value="Absent" ${savedStatus === 'Absent' ? 'checked' : ''} ${isDisabled ? 'disabled' : ''} onchange="updateSummary()"></div>
+                            <div class="status-radio-cell"><input type="radio" class="status-radio late" name="status-${rollNo}" value="Late" ${savedStatus === 'Late' ? 'checked' : ''} ${isDisabled ? 'disabled' : ''} onchange="updateSummary()"></div>
+                        </div>
+                    `;
 
                     tr.innerHTML = `
                         <td><strong>${rollNo}</strong></td>
                         <td>${name}</td>
-                        <td>
-                            <div class="status-grid">
-                                <div class="status-radio-cell"><input type="radio" class="status-radio present" name="status-${rollNo}" value="Present" ${savedStatus === 'Present' ? 'checked' : ''} ${isDisabled ? 'disabled' : ''} onchange="updateSummary()"></div>
-                                <div class="status-radio-cell"><input type="radio" class="status-radio absent" name="status-${rollNo}" value="Absent" ${savedStatus === 'Absent' ? 'checked' : ''} ${isDisabled ? 'disabled' : ''} onchange="updateSummary()"></div>
-                                <div class="status-radio-cell"><input type="radio" class="status-radio late" name="status-${rollNo}" value="Late" ${savedStatus === 'Late' ? 'checked' : ''} ${isDisabled ? 'disabled' : ''} onchange="updateSummary()"></div>
-                            </div>
-                        </td>
+                        <td>${statusCellHtml}</td>
                     `;
                     fragment.appendChild(tr);
                 }
@@ -576,11 +612,17 @@
             }
 
             async function fetchAtlasAttendance() {
+                const selectedDate = dateInput.value;
+                if (isSunday(selectedDate)) {
+                    fetchedRecord = null;
+                    renderAttendanceTable();
+                    return;
+                }
+
                 renderAttendanceTable();
 
                 const selectedClass = classSelect.value || 1;
                 const selectedDiv = divisionSelect.value || "A";
-                const selectedDate = dateInput.value;
 
                 try {
                     const res = await fetch(`/api/attendance/${selectedClass}/${selectedDiv}/${selectedDate}`);
@@ -596,6 +638,7 @@
             }
 
             markAllPresentBtn.addEventListener("click", () => {
+                if (isSunday(dateInput.value)) return;
                 for (let rollNo = 1; rollNo <= 35; rollNo++) {
                     const presentRadio = document.querySelector(`input[name="status-${rollNo}"][value="Present"]`);
                     if (presentRadio && !presentRadio.disabled) {
@@ -615,6 +658,11 @@
                 const selectedClass = classSelect.value;
                 const selectedDiv = divisionSelect.value;
                 const date = dateInput.value;
+
+                if (isSunday(date)) {
+                    showToast("Cannot submit attendance on Sunday (Holiday).", "error");
+                    return;
+                }
 
                 const attendanceRecord = {};
                 let selectedCount = 0;
